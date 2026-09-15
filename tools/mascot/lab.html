@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Snappy mascot lab</title>
+<link rel="stylesheet" href="../../src/Snappy/wwwroot/mascot.css">
+<style>
+  body { margin: 0; background: #0a0a0a; color: #eceef3; font: 14px "Segoe UI", system-ui, sans-serif; padding: 24px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: #8a8fa0; margin: 22px 0 10px; }
+  .hero { display: flex; gap: 28px; align-items: center; }
+  .hero .mascot { width: 220px; height: 220px; }
+  .buttons { display: flex; flex-wrap: wrap; gap: 8px; max-width: 520px; }
+  button { background: #1d1f26; color: #eceef3; border: 1px solid rgba(255,255,255,.1); border-radius: 8px; padding: 8px 12px; cursor: pointer; font: inherit; }
+  button:hover { background: #262833; }
+  .moods { display: flex; flex-wrap: wrap; gap: 18px; }
+  .mood { display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 12px; color: #a4a8b4; }
+  .mood .mascot { width: 118px; height: 118px; }
+  .sizes { display: flex; gap: 22px; align-items: flex-end; }
+  .sizes div { display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 11px; color: #6c7181; }
+  .light { background: #f4f4f8; padding: 12px; border-radius: 12px; }
+</style>
+</head>
+<body>
+  <div class="hero">
+    <div id="hero"></div>
+    <div>
+      <div class="buttons" id="buttons"></div>
+      <p style="color:#8a8fa0">Move the mouse around and the eyes follow it.</p>
+    </div>
+  </div>
+
+  <h2>Icon sizes</h2>
+  <div class="sizes" id="sizes"></div>
+  <div class="sizes light" id="sizesLight" style="margin-top:10px"></div>
+
+  <script src="../../src/Snappy/wwwroot/mascot.js"></script>
+  <script>
+    Mascot.mount(document.getElementById('hero'));
+    Mascot.setBase('recording');
+    const buttons = document.getElementById('buttons');
+    const actions = {
+      'idle': () => Mascot.setBase('idle'),
+      'recording': () => Mascot.setBase('recording'),
+      'paused': () => Mascot.setBase('paused'),
+      'starting': () => Mascot.setBase('starting'),
+      'problem': () => Mascot.setBase('problem'),
+      'working (hold 3s)': () => { Mascot.hold('w', 'working'); setTimeout(() => Mascot.release('w'), 3000); },
+      'trimming (hold 3s)': () => { Mascot.hold('t', 'trimming'); setTimeout(() => Mascot.release('t'), 3000); },
+      'clip → saved': () => { Mascot.hold('c', 'clipping'); setTimeout(() => { Mascot.release('c'); Mascot.flash('happy', 1300); }, 1800); },
+      'happy': () => Mascot.flash('happy', 1300),
+      'error': () => Mascot.flash('error', 2200),
+    };
+    for (const [label, fn] of Object.entries(actions)) {
+      const b = document.createElement('button');
+      b.textContent = label;
+      b.onclick = fn;
+      buttons.appendChild(b);
+    }
+    for (const [host, sizes] of [['sizes', [128, 64, 48, 32, 24, 16]], ['sizesLight', [48, 32, 24, 16]]]) {
+      for (const s of sizes) {
+        const wrap = document.createElement('div');
+        const m = document.createElement('div');
+        m.style.width = m.style.height = s + 'px';
+        if (s <= 24) m.classList.add('tiny');
+        wrap.appendChild(m);
+        wrap.appendChild(document.createTextNode(s + 'px'));
+        document.getElementById(host).appendChild(wrap);
+        Mascot.mount(m);
+      }
+    }
+  </script>
+</body>
+</html>

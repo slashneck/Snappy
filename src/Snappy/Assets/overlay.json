@@ -1,0 +1,26 @@
+{
+  "clip": {
+    "frames": 26,
+    "size": 128,
+    "cols": 13,
+    "fps": 30
+  },
+  "working": {
+    "frames": 33,
+    "size": 128,
+    "cols": 13,
+    "fps": 30
+  },
+  "happy": {
+    "frames": 33,
+    "size": 128,
+    "cols": 13,
+    "fps": 30
+  },
+  "error": {
+    "frames": 39,
+    "size": 128,
+    "cols": 13,
+    "fps": 30
+  }
+}

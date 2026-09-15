@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <AssemblyName>Snappy</AssemblyName>
+    <ApplicationIcon>Assets\snappy.ico</ApplicationIcon>
+    <RootNamespace>Snappy</RootNamespace>
+    <Version>1.0.0</Version>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <Product>Snappy</Product>
+    <Company>Snappy</Company>
+    <Description>Snappy</Description>
+    <Copyright>Copyright (c) 2026 slashneck</Copyright>
+    <DebugType Condition="'$(Configuration)' == 'Release'">none</DebugType>
+    <!-- Keep the process lean: workstation GC, background collections, no server heaps. -->
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\ffmpeg\ffmpeg.exe" Link="ffmpeg\ffmpeg.exe" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\ffmpeg\LICENSE" Link="ffmpeg\LICENSE" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <EmbeddedResource Include="Assets\*.ico;Assets\*.png;Assets\*.wav;Assets\*.json" LogicalName="Snappy.Assets.%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4191.47" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,74 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../src/Snappy/wwwroot/mascot.css">
+<style>
+  html, body { margin: 0; background: transparent; overflow: hidden; }
+  #root { display: grid; }
+  .cell { position: relative; }
+  .badge { position: absolute; border-radius: 50%; box-sizing: border-box; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="../../src/Snappy/wwwroot/mascot.js"></script>
+<script>
+  const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+  function build(count, size, cols, classes, viewBox) {
+    const root = document.getElementById('root');
+    root.innerHTML = '';
+    root.style.gridTemplateColumns = `repeat(${cols}, ${size}px)`;
+    const els = [];
+    for (let i = 0; i < count; i++) {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.style.width = cell.style.height = `${size}px`;
+      const m = document.createElement('div');
+      m.style.width = m.style.height = `${size}px`;
+      classes.forEach((c) => m.classList.add(c));
+      cell.appendChild(m);
+      root.appendChild(cell);
+      Mascot.mount(m);
+      if (viewBox) m.querySelector('svg').setAttribute('viewBox', viewBox);
+      els.push({ cell, m });
+    }
+    return els;
+  }
+
+  // Animation strip: frame i shows the mood at time startMs + i / fps.
+  window.renderSheet = async ({ mood, size, frames, fps, cols, classes = [], viewBox = null, lx = 0, ly = 0, startMs = 0 }) => {
+    const els = build(frames, size, cols, classes, viewBox);
+    Mascot.freeze(mood, 0, lx, ly);
+    await frame();
+    els.forEach(({ m }, i) => {
+      for (const a of m.getAnimations({ subtree: true })) { a.pause(); a.currentTime = startMs + (i * 1000) / fps; }
+    });
+    await frame();
+    return { width: cols * size, height: Math.ceil(frames / cols) * size };
+  };
+
+  // Single still (app / tray icons), optional status badge in the corner.
+  window.renderIcon = async ({ mood, size, classes = [], viewBox = null, lx = 0, ly = 0, t = 0, badge = null }) => {
+    const [{ cell, m }] = build(1, size, 1, classes, viewBox);
+    Mascot.freeze(mood, t, lx, ly);
+    if (badge) {
+      const d = Math.max(6, Math.round(size * 0.42));
+      const b = document.createElement('div');
+      b.className = 'badge';
+      b.style.width = b.style.height = `${d}px`;
+      b.style.right = '0px';
+      b.style.bottom = '0px';
+      b.style.background = badge;
+      b.style.border = `${Math.max(1, Math.round(size * 0.07))}px solid #0a0a0a`;
+      cell.appendChild(b);
+    }
+    await frame();
+    for (const a of m.getAnimations({ subtree: true })) { a.pause(); a.currentTime = t; }
+    await frame();
+    return { width: size, height: size };
+  };
+</script>
+</body>
+</html>
