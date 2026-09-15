@@ -56,6 +56,11 @@ public sealed class VideoEngine : IDisposable
     private volatile StudioScene? _studio;
     private bool _runUsedStudio;
     private int _studioFailures;
+    private readonly string _preferredEncoder;
+    private List<FfmpegArgs.CaptureMode> _modes = new();
+    private string _modesFor = "";
+    private int _modeIndex, _modeFailures;
+    private volatile bool _runGotFrames;
 
     public RingArena Ring { get; }
     /// <summary>Set when FFmpeg kept failing with the Studio layers. Capture then carries on without them.</summary>
@@ -63,6 +68,8 @@ public sealed class VideoEngine : IDisposable
     public volatile VideoEngineState State = VideoEngineState.Stopped;
     public string? LastError { get; private set; }
     public string EncoderName { get; private set; } = "";
+    /// <summary>Set when the hardware encoder wouldn't start and recording fell back to the CPU encoder.</summary>
+    public string? FallbackNote { get; private set; }
     public DisplayInfo? Display { get; private set; }
 
     public event Action? StateChanged;
@@ -71,6 +78,7 @@ public sealed class VideoEngine : IDisposable
     {
         _settings = settings;
         _studio = studio;
+        _preferredEncoder = encoder;
         EncoderName = encoder;
         _bufferHns = Clock.SecondsToHns(settings.BufferSeconds + 3); // + slack so a clip can start on a keyframe
         // Size for the rate-control ceiling (maxrate = 1.25x) plus TS overhead, so the buffer is never short.
@@ -155,6 +163,8 @@ public sealed class VideoEngine : IDisposable
             {
                 _studioFailures = 0;
             }
+            if (!_runGotFrames && !_restartRequested && !_runUsedStudio && NextModeAfterFailure()) backoffMs = 1000;
+            else if (_runGotFrames) _modeFailures = 0;
             SetState(_restartRequested ? VideoEngineState.Restarting : VideoEngineState.Failed);
             _wake.Reset();
             _wake.Wait(_restartRequested ? 300 : backoffMs);
@@ -162,11 +172,40 @@ public sealed class VideoEngine : IDisposable
         }
     }
 
+    /// <summary>Two starts in a row without a single frame: try the next way of recording. True when it switched.</summary>
+    private bool NextModeAfterFailure()
+    {
+        if (++_modeFailures < 2 || _modeIndex >= _modes.Count - 1) return false;
+        var failed = _modes[_modeIndex];
+        var next = _modes[++_modeIndex];
+        _modeFailures = 0;
+        Log.Warn($"Recording with {failed.Label} didn't start twice, switching to {next.Label}");
+        if (next.Encoder == "libx264" && failed.Encoder != "libx264")
+        {
+            string card = failed.Encoder.EndsWith("_nvenc", StringComparison.Ordinal) ? "NVIDIA" : "AMD";
+            FallbackNote = $"The {card} encoder didn't start on this PC, so Snappy records with the CPU encoder, which is heavier. " +
+                           "Updating the graphics driver may fix this.";
+        }
+        return true;
+    }
+
     private void RunOnce()
     {
         SetState(VideoEngineState.Starting);
         Display = Displays.Resolve(_settings.MonitorDeviceName)
                   ?? throw new InvalidOperationException("No monitor found to capture");
+        string modesFor = $"{Display.AdapterIndex}|{Display.VendorId}";
+        if (modesFor != _modesFor)
+        {
+            _modes = FfmpegArgs.CaptureModes(_preferredEncoder, Display);
+            _modesFor = modesFor;
+            _modeIndex = 0;
+            _modeFailures = 0;
+            FallbackNote = null;
+        }
+        var mode = _modes[_modeIndex];
+        EncoderName = mode.Encoder;
+        _runGotFrames = false;
 
         int sessionId = Interlocked.Increment(ref _sessionCounter);
         CaptureSession? current = null;
@@ -185,14 +224,20 @@ public sealed class VideoEngine : IDisposable
         var session = new CaptureSession
         {
             Id = sessionId,
-            // Blended frames reach the encoder in a different pixel format, so they never share a file with plain ones.
-            CodecKey = $"{EncoderName}|{Display.Width}x{Display.Height}|{_settings.OutputHeight}|{_settings.Fps}{(studio != null ? "|layers" : "")}",
+            // Frames that reach the encoder another way may be encoded slightly differently, so they never share a file.
+            CodecKey = $"{mode.Encoder}|{(mode.OnGpu && studio == null ? "gpu" : "memory")}|{Display.Width}x{Display.Height}|{_settings.OutputHeight}|{_settings.Fps}",
             FrameDurationHns = Clock.HnsPerSecond / _settings.Fps,
         };
         current = session;
         lock (_sessionsGate) _sessions[session.Id] = session;
 
-        var psi = new ProcessStartInfo(AppPaths.FfmpegExe, FfmpegArgs.BuildCapture(_settings, Display, EncoderName, studio))
+        string arguments = FfmpegArgs.BuildCapture(_settings, Display, mode, studio);
+#if DEBUG
+        // Development only: SNAPPY_BREAK_CAPTURE=n makes the first n ways of recording fail, to test the fallback.
+        if (int.TryParse(Environment.GetEnvironmentVariable("SNAPPY_BREAK_CAPTURE"), out int broken) && _modeIndex < broken)
+            arguments = arguments.Replace("-c:v ", "-c:v broken_");
+#endif
+        var psi = new ProcessStartInfo(AppPaths.FfmpegExe, arguments)
         {
             UseShellExecute = false,
             CreateNoWindow = true,
@@ -200,7 +245,7 @@ public sealed class VideoEngine : IDisposable
             RedirectStandardError = true,
             RedirectStandardInput = true,
         };
-        Log.Info($"Starting capture session {session.Id}: {Display.Label} on {Display.AdapterName}, {EncoderName}, {_settings.Fps} fps, {_settings.BitrateMbps} Mbps");
+        Log.Info($"Starting capture session {session.Id}: {Display.Label} on {Display.AdapterName}, {mode.Label}, {_settings.Fps} fps, {_settings.BitrateMbps} Mbps");
         Log.Info($"ffmpeg {psi.Arguments}");
 
         using var proc = Process.Start(psi) ?? throw new InvalidOperationException("Could not start ffmpeg");
@@ -222,6 +267,7 @@ public sealed class VideoEngine : IDisposable
 
         var demux = new TsDemuxer((packets, pts90k, key, arrival) =>
         {
+            _runGotFrames = true;
             session.Observe(arrival, CaptureSession.Pts90kToHns(pts90k));
             long host = session.HostTimeHns(pts90k);
             Ring.Append(packets, host, session.FrameDurationHns, key ? RingArena.FlagKeyframe : 0, session.Id, pts90k);

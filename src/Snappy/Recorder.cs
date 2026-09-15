@@ -66,7 +66,7 @@ public sealed class Recorder : IDisposable
     public void Start()
     {
         _hotkeys.SetHotkeys(Settings.SaveClipHotkey, Settings.SaveShortClipHotkey, Settings.ScreenshotHotkey, Settings.MarkMomentHotkey);
-        Encoder = FfmpegArgs.ResolveEncoder(Settings.Encoder);
+        Encoder = FfmpegArgs.ResolveEncoder(Settings.Encoder, Displays.Resolve(Settings.MonitorDeviceName));
         Log.Info($"Using encoder {Encoder}");
         _liveScene = PickScene();
         StartVideo();
@@ -83,7 +83,7 @@ public sealed class Recorder : IDisposable
             if (Paused) return;
             if (updated.VideoPipelineKey() != _videoKey)
             {
-                Encoder = FfmpegArgs.ResolveEncoder(updated.Encoder);
+                Encoder = FfmpegArgs.ResolveEncoder(updated.Encoder, Displays.Resolve(updated.MonitorDeviceName));
                 StopVideo();
                 StartVideo();
             }
@@ -250,11 +250,12 @@ public sealed class Recorder : IDisposable
         {
             VideoEngineState.Recording => ("recording", $"Recording · {buffered:F0}s buffered · {memMb:F0} MB"),
             VideoEngineState.Starting or VideoEngineState.Restarting => ("starting", "Starting capture…"),
-            VideoEngineState.Failed => ("problem", $"Capture problem, retrying: {v.LastError}"),
+            VideoEngineState.Failed => ("problem", "Recording didn't start, trying again"),
             _ => ("starting", v.State.ToString()),
         };
-        if (state == "problem" && v.LastError != null) warnings.Insert(0, v.LastError);
-        return new RecorderStatus(state, text, buffered, Settings.BufferSeconds, memMb, Encoder, saving, desktopName, micName, warnings, _liveScene?.Id ?? "");
+        if (state == "problem") warnings.Insert(0, "Recording didn't start. Snappy keeps trying other ways to record. The details are in the log file (Settings, About).");
+        if (v.FallbackNote != null) warnings.Add(v.FallbackNote);
+        return new RecorderStatus(state, text, buffered, Settings.BufferSeconds, memMb, v.EncoderName, saving, desktopName, micName, warnings, _liveScene?.Id ?? "");
     }
 
     private void StartVideo()

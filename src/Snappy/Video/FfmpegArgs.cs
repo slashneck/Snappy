@@ -11,13 +11,44 @@ public static class FfmpegArgs
     public static readonly string[] AutoEncoderOrder = { "h264_nvenc", "h264_amf", "libx264" };
     private static readonly ConcurrentDictionary<string, bool> ProbeCache = new();
 
-    /// <summary>Picks the requested encoder if this PC can run it, otherwise the best available hardware encoder.</summary>
-    public static string ResolveEncoder(string preference)
+    /// <summary>A way to record: which encoder, and whether frames can stay on the graphics card on the way there.</summary>
+    public sealed record CaptureMode(string Encoder, bool OnGpu)
+    {
+        public string Label => OnGpu || Encoder == "libx264" ? Encoder : $"{Encoder} with copied frames";
+    }
+
+    /// <summary>
+    /// Picks the requested encoder if this PC can run it, otherwise the best available one. The encoder of the graphics
+    /// card the monitor is plugged into goes first, because only then can frames stay on that card.
+    /// </summary>
+    public static string ResolveEncoder(string preference, DisplayInfo? display = null)
     {
         if (preference != "auto" && Probe(preference)) return preference;
         if (preference != "auto") Log.Warn($"Encoder {preference} is not available on this PC, falling back");
-        return AutoEncoderOrder.FirstOrDefault(Probe) ?? "libx264";
+        return AutoEncoderOrder.OrderBy(e => display != null && VendorOf(e) == display.VendorId ? 0 : 1).FirstOrDefault(Probe) ?? "libx264";
     }
+
+    /// <summary>
+    /// Ways to record, best first. Frames only stay on the GPU when the encoder belongs to the monitor's graphics card.
+    /// On PCs with two graphics chips (a laptop, or a Ryzen CPU next to a GeForce card) the screen and the encoder
+    /// often sit on different ones, and handing a texture across fails. The video engine moves down this list when a
+    /// way keeps failing, ending with the CPU encoder.
+    /// </summary>
+    public static List<CaptureMode> CaptureModes(string encoder, DisplayInfo display)
+    {
+        var modes = new List<CaptureMode>();
+        if (encoder != "libx264")
+        {
+            if (VendorOf(encoder) == display.VendorId) modes.Add(new CaptureMode(encoder, true));
+            modes.Add(new CaptureMode(encoder, false));
+        }
+        modes.Add(new CaptureMode("libx264", false));
+        return modes;
+    }
+
+    private static int VendorOf(string encoder) =>
+        encoder.EndsWith("_nvenc", StringComparison.Ordinal) ? 0x10DE :
+        encoder.EndsWith("_amf", StringComparison.Ordinal) ? 0x1002 : -1;
 
     public static bool Probe(string encoder) => ProbeCache.GetOrAdd(encoder, enc =>
     {
@@ -49,27 +80,31 @@ public static class FfmpegArgs
         return ((int)Math.Round(display.Width * (double)h / display.Height / 2) * 2, h);
     }
 
-    public static string BuildCapture(AppSettings s, DisplayInfo display, string encoder, StudioPipeline? studio = null)
+    public static string BuildCapture(AppSettings s, DisplayInfo display, CaptureMode mode, StudioPipeline? studio = null)
     {
         string Mbps(double v) => v.ToString("0.#", CultureInfo.InvariantCulture) + "M";
         int fps = s.Fps;
+        string encoder = mode.Encoder;
 
-        // Without Studio layers the frames never leave the GPU: ddagrab (D3D11 texture), optional GPU scale, hardware encoder.
+        // Capture and scaling always happen on the monitor's graphics card. The frames then go straight to the encoder
+        // as textures, or get copied to memory first: for another card's encoder, the CPU encoder, or Studio layers.
+        bool onGpu = mode.OnGpu && studio == null;
         string graph = $"ddagrab=output_idx={display.OutputIndex}:framerate={fps}:draw_mouse={(s.CaptureCursor ? 1 : 0)}:dup_frames=1";
         var (w, h) = OutputSize(s, display);
         if (w != display.Width || h != display.Height) graph += $",scale_d3d11=width={w}:height={h}";
-        bool cpuEncoder = encoder == "libx264";
-        if (cpuEncoder || studio != null) graph += ",hwdownload,format=bgra";
+        if (!onGpu) graph += ",hwdownload,format=bgra";
+        string last = "frames";
         if (studio != null)
         {
-            // Layers are blended on the CPU. NVENC takes BGRA as is, AMF wants NV12.
             graph += "[base]" + studio.Compose("base", "layered");
-            graph += encoder.EndsWith("_amf", StringComparison.Ordinal) ? ";[layered]format=nv12[v]" : ";[layered]null[v]";
+            last = "layered";
         }
         else
         {
-            graph += "[v]";
+            graph += "[frames]";
         }
+        // From memory, NVENC takes BGRA as is while AMF wants NV12.
+        graph += !onGpu && encoder.EndsWith("_amf", StringComparison.Ordinal) ? $";[{last}]format=nv12[v]" : $";[{last}]null[v]";
 
         var args = new List<string> { "-hide_banner", "-loglevel", "warning", "-nostdin" };
         if (studio != null) args.AddRange(studio.InputArgs);

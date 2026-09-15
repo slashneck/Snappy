@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace Snappy.Video;
 
 public sealed record DisplayInfo(int AdapterIndex, int OutputIndex, string DeviceName, string AdapterName,
-    int X, int Y, int Width, int Height, bool IsPrimary)
+    int X, int Y, int Width, int Height, bool IsPrimary, int VendorId)
 {
     public string Label => $"{DeviceName.Replace(@"\\.\DISPLAY", "Display ")} · {Width}×{Height}{(IsPrimary ? " · primary" : "")}";
 }
@@ -81,7 +81,7 @@ public static unsafe class Displays
                                 if (d.AttachedToDesktop != 0)
                                     result.Add(new DisplayInfo((int)a, (int)o, d.DeviceName, adesc.Description.Trim(),
                                         d.Left, d.Top, d.Right - d.Left, d.Bottom - d.Top,
-                                        string.Equals(d.DeviceName, primary, StringComparison.OrdinalIgnoreCase)));
+                                        string.Equals(d.DeviceName, primary, StringComparison.OrdinalIgnoreCase), (int)adesc.VendorId));
                             }
                             finally { Marshal.FreeHGlobal(odescPtr); }
                         }
