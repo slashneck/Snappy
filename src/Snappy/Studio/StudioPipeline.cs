@@ -57,7 +57,7 @@ public sealed class StudioPipeline : IDisposable
             if (layer.Type == "image")
             {
                 string png = Path.Combine(CacheDir, $"{layer.Id}-{w}x{h}.png");
-                RenderStill(Path.Combine(StudioSetup.MediaDir, layer.File), w, h, layer.Opacity, png);
+                RenderStill(Path.Combine(StudioSetup.MediaDir, layer.File), w, h, layer.Opacity, layer.Fit == "fit", png);
                 InputArgs.AddRange(new[] { "-i", Quote(png) });
             }
             else
@@ -99,7 +99,7 @@ public sealed class StudioPipeline : IDisposable
         return sb.ToString();
     }
 
-    private static void RenderStill(string source, int w, int h, double opacity, string destination)
+    private static void RenderStill(string source, int w, int h, double opacity, bool keepShape, string destination)
     {
         using var img = Image.FromFile(source);
         using var bmp = new Bitmap(w, h, PixelFormat.Format32bppArgb);
@@ -107,7 +107,14 @@ public sealed class StudioPipeline : IDisposable
         {
             Prepare(g);
             using var attributes = Attributes(opacity);
-            g.DrawImage(img, new Rectangle(0, 0, w, h), 0, 0, img.Width, img.Height, GraphicsUnit.Pixel, attributes);
+            var target = new Rectangle(0, 0, w, h);
+            if (keepShape)
+            {
+                double scale = Math.Min((double)w / img.Width, (double)h / img.Height);
+                int fitW = Math.Max(1, (int)Math.Round(img.Width * scale)), fitH = Math.Max(1, (int)Math.Round(img.Height * scale));
+                target = new Rectangle((w - fitW) / 2, (h - fitH) / 2, fitW, fitH);
+            }
+            g.DrawImage(img, target, 0, 0, img.Width, img.Height, GraphicsUnit.Pixel, attributes);
         }
         bmp.Save(destination, ImageFormat.Png);
     }
@@ -217,18 +224,23 @@ internal sealed class InputsSource : ILayerSource
 {
     private readonly InputOverlayRenderer _renderer;
     private readonly InputListener _listener;
+    private readonly bool _gamepad;
 
     public InputsSource(StudioLayer layer, int w, int h)
     {
         _renderer = new InputOverlayRenderer(layer, w, h);
-        _listener = InputHub.Claim(this, layer.ShowKeys ? InputOverlayRenderer.KeysFor(layer) : Enumerable.Empty<int>());
+        _listener = InputHub.Claim(this, InputOverlayRenderer.KeysFor(layer));
+        _gamepad = InputOverlayRenderer.NeedsGamepad(layer);
+        if (_gamepad) GamepadHub.Claim(this);
     }
 
-    public void Render(byte[] bgra, long nowHns) => _renderer.Render(_listener.Live(), bgra);
+    public void Render(byte[] bgra, long nowHns) =>
+        _renderer.Render(_listener.Live(), _gamepad ? GamepadHub.Current : null, bgra);
 
     public void Dispose()
     {
         InputHub.Release(this);
+        if (_gamepad) GamepadHub.Release(this);
         _renderer.Dispose();
     }
 }

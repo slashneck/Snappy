@@ -93,6 +93,9 @@ const Editor = (() => {
     return actx;
   }
 
+  // Track one is the mix a player uses; everything after it is a lane you can edit.
+  const isMixTrack = (t) => t.title.includes('+') || t.title.toLowerCase() === 'mix';
+
   async function openAudio() {
     const pane = $('#audioPane');
     if (!ed.info) { pane.innerHTML = '<span class="hint">Loading…</span>'; return; }
@@ -102,11 +105,14 @@ const Editor = (() => {
 
     const tracks = ed.info.audioTracks;
     const named = (n) => tracks.find((t) => t.title.toLowerCase() === n);
+    // Clips split by program carry a lane per program; the desktop track holds the same sound and stays out of the way.
+    const programs = tracks.filter((t) => t.title && !isMixTrack(t) && !['desktop', 'mic'].includes(t.title.toLowerCase()));
     let desktop = named('desktop'), mic = named('mic');
     if ((!desktop || !mic) && tracks.length === 3 && tracks.every((t) => !t.title)) { desktop = tracks[1]; mic = tracks[2]; }
-    const picks = desktop && mic
-      ? [[desktop, 'Desktop'], [mic, 'Mic']]
-      : tracks.map((t, i) => [t, t.title || (tracks.length === 1 ? 'Audio' : `Track ${i + 1}`)]);
+    let picks;
+    if (programs.length) picks = programs.concat(mic ? [mic] : []).map((t) => [t, t.title]);
+    else if (desktop && mic) picks = [[desktop, 'Desktop'], [mic, 'Mic']];
+    else picks = tracks.map((t, i) => [t, t.title || (tracks.length === 1 ? 'Audio' : `Track ${i + 1}`)]);
     ed.lanes = picks.map(([t, name]) => ({ track: t.index, name, volume: 1, muted: false, mutes: [], peaks: null, audio: null, gain: null }));
     renderLanes();
     renderAudioPane();

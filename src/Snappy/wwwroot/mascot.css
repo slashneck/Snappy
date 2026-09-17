@@ -108,6 +108,27 @@
 .mascot[data-mood="problem"] .m-eye-open { animation: m-worry 2.2s ease-in-out infinite; }
 @keyframes m-worry { 0%, 100% { transform: translate(-7px, 2px); } 50% { transform: translate(7px, 2px); } }
 
+/* a poke: squish down, eyes go happy */
+.mascot.pet .m-body { animation: m-pet .62s cubic-bezier(.2, .8, .2, 1) both; }
+.mascot.pet .m-shadow { animation: m-shadow-squash .62s ease-out both; }
+.mascot.pet .m-eye-open { opacity: 0; }
+.mascot.pet .m-eye-happy { opacity: 1; }
+@keyframes m-pet {
+  0% { transform: none; }
+  28% { transform: translateY(5px) scale(1.07, .93); }
+  62% { transform: translateY(-3px) scale(.98, 1.03); }
+  100% { transform: none; }
+}
+
+/* the odd stretch while it waits around */
+.mascot.stretch .m-body { animation: m-stretch 1.5s ease-in-out both; }
+@keyframes m-stretch {
+  0%, 100% { transform: none; }
+  22% { transform: translateY(-6px) scale(.985, 1.035) rotate(-2.5deg); }
+  58% { transform: translateY(-4px) scale(1.025, .975) rotate(2.5deg); }
+  82% { transform: translateY(1px) scale(1.01, .99); }
+}
+
 /* Icon rendering at tiny sizes: chunkier ink, fewer details */
 .mascot.tiny .m-ink { stroke-width: 12; }
 .mascot.tiny .m-tiny-hide, .mascot.tiny .m-shadow { display: none; }

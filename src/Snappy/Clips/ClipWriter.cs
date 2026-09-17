@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Diagnostics;
 using System.Globalization;
+using System.Runtime.InteropServices;
 using System.Text;
 using Snappy.Audio;
 using Snappy.Core;
@@ -18,8 +19,15 @@ public sealed record ClipResult(bool Success, string? FilePath, double DurationS
 /// </summary>
 public static class ClipWriter
 {
+    /// <summary>A program track this quiet made no sound worth its own track.</summary>
+    private const int QuietTrack = 200; // out of 32767
+
+    /// <summary>A finished wav on disk, plus how it should show up in the clip.</summary>
+    private sealed record Track(string Path, string Title, int VolumePercent, bool InMix, bool Mono);
+
     public static async Task<ClipResult> SaveAsync(VideoEngine video, AudioSource? desktop, AudioSource? mic,
-        AppSettings settings, int seconds, string appName, IReadOnlyList<long>? markers = null, CancellationToken ct = default)
+        IReadOnlyList<ProcessAudioSource>? programs, AppSettings settings, int seconds, string appName,
+        IReadOnlyList<long>? markers = null, CancellationToken ct = default)
     {
         string tempDir = Path.Combine(Path.GetTempPath(), "Snappy", Guid.NewGuid().ToString("N"));
         try
@@ -32,18 +40,37 @@ public static class ClipWriter
             var cut = WriteVideo(video, wantedStart, tsPath);
             if (cut == null) return new ClipResult(false, null, 0, appName, "Nothing has been recorded yet");
 
-            var tracks = new List<(AudioSource Src, string Path, int VolumePercent)>();
+            bool byProgram = settings.SeparateAudioTracks && settings.SplitAudioByProgram && programs is { Count: > 0 };
+            var tracks = new List<Track>();
             if (desktop != null)
             {
                 string p = Path.Combine(tempDir, "desktop.wav");
                 WriteWav(desktop, cut.Value.StartHns, cut.Value.EndHns, p);
-                tracks.Add((desktop, p, settings.DesktopVolumePercent));
+                tracks.Add(new Track(p, "Desktop", settings.DesktopVolumePercent, true, false));
+            }
+            if (byProgram)
+            {
+                // Programs carry the desktop sound between them, so they only join the mix when there is no desktop track.
+                var taken = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Desktop", "Mic", "Mix" };
+                int index = 0;
+                foreach (var program in programs!)
+                {
+                    string p = Path.Combine(tempDir, $"program{index++}.wav");
+                    if (WriteWav(program, cut.Value.StartHns, cut.Value.EndHns, p) < QuietTrack)
+                    {
+                        TryDelete(p); // it was running but stayed quiet through these seconds
+                        continue;
+                    }
+                    string title = program.Name;
+                    for (int n = 2; !taken.Add(title); n++) title = $"{program.Name} {n}";
+                    tracks.Add(new Track(p, title, settings.DesktopVolumePercent, desktop == null, false));
+                }
             }
             if (mic != null)
             {
                 string p = Path.Combine(tempDir, "mic.wav");
                 WriteWav(mic, cut.Value.StartHns, cut.Value.EndHns, p);
-                tracks.Add((mic, p, settings.MicVolumePercent));
+                tracks.Add(new Track(p, "Mic", settings.MicVolumePercent, true, mic.Channels == 1));
             }
 
             string folder = Path.Combine(settings.ClipsFolder, appName);
@@ -169,8 +196,9 @@ public static class ClipWriter
     /// <summary>
     /// Lays audio chunks onto the clip timeline by their QPC timestamps. Gaps (e.g. loopback delivers nothing while
     /// the PC is silent) become silence; tiny jitter is ignored so the waveform stays continuous.
+    /// Returns the loudest sample it wrote, which tells a program track apart from a silent one.
     /// </summary>
-    private static void WriteWav(AudioSource src, long startHns, long endHns, string path)
+    private static int WriteWav(IAudioTrackSource src, long startHns, long endHns, string path)
     {
         int rate = AudioSource.SampleRate, ch = src.Channels, block = src.BlockAlign;
         long totalFrames = (endHns - startHns) * rate / Clock.HnsPerSecond;
@@ -190,6 +218,7 @@ public static class ClipWriter
         byte[] chunk = new byte[1 << 16];
         byte[] zeros = new byte[1 << 16];
         long written = 0;
+        int peak = 0;
 
         void Silence(long frames)
         {
@@ -219,13 +248,24 @@ public static class ClipWriter
             if (skip >= frames) continue;
             long take = Math.Min(frames - skip, totalFrames - written);
             if (take <= 0) break;
-            fs.Write(chunk, (int)(skip * block), (int)(take * block));
+            var span = chunk.AsSpan((int)(skip * block), (int)(take * block));
+            foreach (short sample in MemoryMarshal.Cast<byte, short>(span))
+            {
+                int level = Math.Abs((int)sample);
+                if (level > peak) peak = level;
+            }
+            fs.Write(span);
             written += take;
         }
         if (written < totalFrames) Silence(totalFrames - written);
+        return peak;
     }
 
-    private static async Task<string?> MuxAsync(string tsPath, List<(AudioSource Src, string Path, int VolumePercent)> tracks,
+    /// <summary>
+    /// Builds the audio layout: track 1 is always the mix a player will use, and with separate tracks switched on
+    /// every source (desktop, each program, mic) follows as its own track to edit later.
+    /// </summary>
+    private static async Task<string?> MuxAsync(string tsPath, List<Track> tracks,
         bool separateTracks, string encoder, string outPath, CancellationToken ct)
     {
         var psi = new ProcessStartInfo(AppPaths.FfmpegExe)
@@ -238,26 +278,49 @@ public static class ClipWriter
         var a = psi.ArgumentList;
         foreach (var s in new[] { "-hide_banner", "-loglevel", "error", "-nostdin", "-protocol_whitelist", "file,pipe", "-y", "-i", tsPath })
             a.Add(s);
-        foreach (var t in tracks) { a.Add("-i"); a.Add(t.Path); }
 
         string Vol(int percent) => (percent / 100.0).ToString("0.###", CultureInfo.InvariantCulture);
+        int mixCount = tracks.Count(t => t.InMix);
+        var filters = new List<string>();
+        var mixLabels = new List<string>();
+        var ownLabels = new List<(string Label, string Title)>();
+
+        int input = 0;
+        foreach (var t in tracks)
+        {
+            bool feedsMix = t.InMix && mixCount >= 2;
+            bool ownTrack = separateTracks || (t.InMix && mixCount < 2);
+            if (!feedsMix && !ownTrack) continue;
+
+            a.Add("-i");
+            a.Add(t.Path);
+            string tag = $"a{++input}";
+            string chain = $"[{input}:a]volume={Vol(t.VolumePercent)}";
+            if (t.Mono) chain += ",aformat=channel_layouts=stereo";
+            if (feedsMix && ownTrack)
+            {
+                filters.Add($"{chain},asplit=2[{tag}m][{tag}s]");
+                mixLabels.Add($"[{tag}m]");
+                ownLabels.Add(($"[{tag}s]", t.Title));
+            }
+            else
+            {
+                filters.Add($"{chain}[{tag}]");
+                if (feedsMix) mixLabels.Add($"[{tag}]");
+                else ownLabels.Add(($"[{tag}]", t.Title));
+            }
+        }
+
         var labels = new List<(string Label, string Title)>();
-        if (tracks.Count == 2)
+        if (mixLabels.Count >= 2)
         {
-            string graph =
-                $"[1:a]volume={Vol(tracks[0].VolumePercent)},asplit=2[d1][d2];" +
-                $"[2:a]volume={Vol(tracks[1].VolumePercent)},aformat=channel_layouts=stereo,asplit=2[m1][m2];" +
-                "[d1][m1]amix=inputs=2:normalize=0:duration=longest,alimiter=limit=0.97:latency=1[mix]";
-            if (!separateTracks) graph = graph.Replace(",asplit=2[d1][d2]", "[d1]").Replace(",asplit=2[m1][m2]", "[m1]");
-            a.Add("-filter_complex"); a.Add(graph);
-            labels.Add(("[mix]", "Desktop + Mic"));
-            if (separateTracks) { labels.Add(("[d2]", "Desktop")); labels.Add(("[m2]", "Mic")); }
+            filters.Add($"{string.Concat(mixLabels)}amix=inputs={mixLabels.Count}:normalize=0:duration=longest," +
+                        "alimiter=limit=0.97:latency=1[mix]");
+            bool classic = mixCount == 2 && tracks.Any(t => t.Title == "Desktop") && tracks.Any(t => t.Title == "Mic");
+            labels.Add(("[mix]", classic ? "Desktop + Mic" : "Mix"));
         }
-        else if (tracks.Count == 1)
-        {
-            a.Add("-filter_complex"); a.Add($"[1:a]volume={Vol(tracks[0].VolumePercent)}[a0]");
-            labels.Add(("[a0]", tracks[0].Src.Name == "mic" ? "Mic" : "Desktop"));
-        }
+        labels.AddRange(ownLabels);
+        if (filters.Count > 0) { a.Add("-filter_complex"); a.Add(string.Join(';', filters)); }
 
         a.Add("-map"); a.Add("0:v");
         foreach (var l in labels) { a.Add("-map"); a.Add(l.Label); }

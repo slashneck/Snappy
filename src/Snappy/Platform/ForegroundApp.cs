@@ -148,7 +148,7 @@ public static class ForegroundApp
         return GetWindowText(hwnd, sb, sb.Capacity) > 0 ? sb.ToString() : null;
     }
 
-    private static string? ProcessImagePath(uint pid)
+    internal static string? ProcessImagePath(uint pid)
     {
         IntPtr h = OpenProcess(0x1000 /* PROCESS_QUERY_LIMITED_INFORMATION */, false, pid);
         if (h == IntPtr.Zero) return null;

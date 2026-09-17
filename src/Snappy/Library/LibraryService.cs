@@ -125,7 +125,31 @@ public sealed class LibraryService : IDisposable
         string dest = UniquePath(destDir, Path.GetFileNameWithoutExtension(src), Path.GetExtension(src));
         File.Move(src, dest);
         ClipMeta.MoveWith(src, dest);
+        RemoveIfEmpty(Path.GetDirectoryName(src));
         return RelativeId(dest);
+    }
+
+    /// <summary>
+    /// Drops a game folder once its last clip has left, so the sidebar doesn't collect empty names. Folders that still
+    /// hold anything of yours are left alone.
+    /// </summary>
+    private void RemoveIfEmpty(string? dir)
+    {
+        if (dir == null || string.Equals(Path.GetFullPath(dir), Root, StringComparison.OrdinalIgnoreCase)) return;
+        try
+        {
+            if (!Directory.Exists(dir) || Directory.EnumerateDirectories(dir).Any()) return;
+            var files = new DirectoryInfo(dir).EnumerateFiles().ToList();
+            // Only Snappy's own hidden leftovers may remain, anything visible means the folder is still in use.
+            if (files.Any(f => (f.Attributes & FileAttributes.Hidden) == 0)) return;
+            foreach (var leftover in files) leftover.Delete();
+            Directory.Delete(dir);
+            Log.Info($"Removed the empty folder {Path.GetFileName(dir)}");
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"Couldn't remove the empty folder {dir}: {ex.Message}");
+        }
     }
 
     public string RenameClip(string id, string newTitle)
@@ -141,12 +165,15 @@ public sealed class LibraryService : IDisposable
 
     public void DeleteClips(IEnumerable<string> ids)
     {
+        var folders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (string id in ids)
         {
             string path = ResolvePath(id);
             ShellOps.SendToRecycleBin(path);
             ClipMeta.RecycleWith(path);
+            if (Path.GetDirectoryName(path) is { } dir) folders.Add(dir);
         }
+        foreach (string dir in folders) RemoveIfEmpty(dir);
     }
 
     public void SetFavorite(string id, bool favorite) => ClipMeta.Update(ResolvePath(id), m => m.Favorite = favorite);

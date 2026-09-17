@@ -21,12 +21,16 @@ internal static class Program
             return Installation.Uninstall();
         }
 #if DEBUG
+        if (args.Length > 1 && args[0] == "--test-overlay")
+            return SelfTest.RenderOverlays(args[1]);
         if (args.Length > 0 && args[0] == "--test-clip")
             return SelfTest.Run(args);
         if (args.Length > 1 && args[0] == "--test-menu")
             return SelfTest.RenderTrayMenu(args[1]);
         if (args.Length > 0 && args[0] == "--test-ring")
             return SelfTest.RingArenaTest();
+        if (args.Length > 0 && args[0] == "--test-programs")
+            return SelfTest.ProgramAudioTest(args.Length > 1 ? int.Parse(args[1]) : 10);
         if (args.Length > 2 && args[0] == "--test-export")
             return SelfTest.ExportTest(args[1], args[2]);
 #endif
@@ -46,6 +50,7 @@ internal static class Program
         ApplicationConfiguration.Initialize();
         Log.Info($"Snappy {Updater.Current} starting (args: {string.Join(' ', args)})");
         Updater.CleanUp();
+        Studio.StudioPreview.Forget();
         using var tray = new TrayApp(background: args.Contains("--background"));
         Application.Run(tray);
         Log.Info("Snappy exited");
@@ -120,6 +125,47 @@ internal static class SelfTest
         Console.WriteLine($"OK {output}");
         return 0;
     }
+    /// <summary>Renders every input overlay into PNGs with a few keys and buttons held, to check how they look.</summary>
+    public static int RenderOverlays(string folder)
+    {
+        Directory.CreateDirectory(folder);
+        var state = new Snappy.Input.InputState { TimeMs = 1000 };
+        foreach (int key in new[] { 0x57, 0x10, 0x45 }) state.Keys.Add(key);
+        state.Buttons.Add(1);
+        state.Vx = 90;
+        state.Vy = -25;
+        var pad = new Snappy.Input.GamepadState
+        {
+            Connected = true,
+            Buttons = (ushort)(Snappy.Input.GamepadButton.A | Snappy.Input.GamepadButton.LeftBumper | Snappy.Input.GamepadButton.Up),
+            LeftX = 0.7f, LeftY = 0.35f, RightX = -0.25f, RightY = -0.6f, LeftTrigger = 0.15f, RightTrigger = 0.8f,
+        };
+
+        var samples = new (string Name, string Input, string Design, bool Mouse, int W, int H)[]
+        {
+            ("keys", "keys", "", true, 620, 300),
+            ("keyboard-compact", "keyboard", "compact", false, 900, 320),
+            ("keyboard-full", "keyboard", "full", false, 1000, 430),
+            ("mouse-arrow", "mouse", "arrow", false, 300, 420),
+            ("mouse-simple", "mouse", "simple", false, 220, 310),
+            ("controller-xbox", "controller", "xbox", false, 620, 430),
+            ("controller-playstation", "controller", "playstation", false, 620, 430),
+            ("cat", "cat", "", true, 620, 410),
+        };
+        foreach (var (name, input, design, mouse, w, h) in samples)
+        {
+            var layer = new Studio.StudioLayer
+            {
+                Type = "inputs", Input = input, Design = design, ShowKeys = true, ShowMouse = mouse,
+                Presets = new List<string> { "shooter" }, Accent = "#f4f4f4",
+            };
+            using var renderer = new Studio.InputOverlayRenderer(layer, w, h);
+            File.WriteAllBytes(Path.Combine(folder, name + ".png"), renderer.RenderPng(state, pad));
+            Console.WriteLine($"{name}.png {w}x{h}");
+        }
+        return 0;
+    }
+
     /// <summary>Draws a tray menu with the dark renderer into a PNG, to check the look without opening the real tray.</summary>
     public static int RenderTrayMenu(string path)
     {
@@ -151,6 +197,31 @@ internal static class SelfTest
     }
 
     /// <summary>Records for a while, saves a clip, reports and exits.</summary>
+    /// <summary>Watches the per-program capture and prints how its packets sit on the clock.</summary>
+    public static int ProgramAudioTest(int seconds)
+    {
+        using var programs = new Snappy.Audio.ProgramAudio("", 30);
+        programs.Start();
+        long begin = Clock.NowHns();
+        Thread.Sleep(seconds * 1000);
+        long now = Clock.NowHns();
+        foreach (var source in programs.Sources())
+        {
+            var entries = source.Ring.Snapshot();
+            Console.WriteLine($"{source.Name} (pid {source.ProcessId}) state={source.State} packets={entries.Length}");
+            if (entries.Length == 0) continue;
+            Console.WriteLine($"  first at {Clock.HnsToSeconds(entries[0].TimeHns - begin):F3}s, " +
+                              $"last at {Clock.HnsToSeconds(entries[^1].TimeHns - begin):F3}s, " +
+                              $"run ends at {Clock.HnsToSeconds(now - begin):F3}s");
+            long covered = entries.Sum(e => e.DurationHns);
+            Console.WriteLine($"  audio covers {Clock.HnsToSeconds(covered):F3}s, " +
+                              $"stamps span {Clock.HnsToSeconds(entries[^1].TimeHns - entries[0].TimeHns):F3}s");
+            for (int i = 0; i < Math.Min(6, entries.Length); i++)
+                Console.WriteLine($"  [{i}] t={Clock.HnsToSeconds(entries[i].TimeHns - begin):F3}s dur={Clock.HnsToSeconds(entries[i].DurationHns) * 1000:F1}ms len={entries[i].Length}");
+        }
+        return 0;
+    }
+
     public static int Run(string[] args)
     {
         int waitSeconds = args.Length > 1 ? int.Parse(args[1]) : 10;

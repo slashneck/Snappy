@@ -148,9 +148,26 @@ public static class EditExporter
             return result;
         }
 
-        var (desktop, mic) = FindDesktopAndMic(info);
         AudioLaneSpec LaneFor(int track) => lanes.FirstOrDefault(l => l.Track == track) ?? new AudioLaneSpec(track, 1, false, null);
 
+        var programs = ProgramTracks(info);
+        if (programs.Count > 1)
+        {
+            // The programs (and the mic) are the whole sound, so the first track is mixed again from them.
+            var mixIn = new List<string>();
+            foreach (var t in programs)
+            {
+                filters.Add($"[0:a:{t.Index}]{LaneFilter(LaneFor(t.Index), start, duration)},asplit=2[ap{t.Index}m][ap{t.Index}s]");
+                mixIn.Add($"[ap{t.Index}m]");
+                result.Add(($"[ap{t.Index}s]", t.Title));
+            }
+            filters.Add($"{string.Concat(mixIn)}amix=inputs={mixIn.Count}:normalize=0:duration=longest," +
+                        "alimiter=limit=0.97:latency=1[amix]");
+            result.Insert(0, ("[amix]", "Mix"));
+            return result;
+        }
+
+        var (desktop, mic) = FindDesktopAndMic(info);
         if (desktop != null && mic != null)
         {
             filters.Add($"[0:a:{desktop.Index}]{LaneFilter(LaneFor(desktop.Index), start, duration)},asplit=2[ad1][ad2]");
@@ -168,6 +185,21 @@ public static class EditExporter
             result.Add(($"[a{t.Index}]", t.Title));
         }
         return result;
+    }
+
+    /// <summary>The per-program tracks of a clip that was split by program, with the mic if there is one.</summary>
+    internal static List<AudioTrackInfo> ProgramTracks(ClipMediaInfo info)
+    {
+        bool IsMix(AudioTrackInfo t) => t.Title.Contains('+') || t.Title.Equals("Mix", StringComparison.OrdinalIgnoreCase);
+        var programs = info.AudioTracks
+            .Where(t => t.Title.Length > 0 && !IsMix(t)
+                        && !t.Title.Equals("Desktop", StringComparison.OrdinalIgnoreCase)
+                        && !t.Title.Equals("Mic", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (programs.Count == 0) return programs;
+        var mic = info.AudioTracks.FirstOrDefault(t => t.Title.Equals("Mic", StringComparison.OrdinalIgnoreCase));
+        if (mic != null) programs.Add(mic);
+        return programs;
     }
 
     internal static (AudioTrackInfo? Desktop, AudioTrackInfo? Mic) FindDesktopAndMic(ClipMediaInfo info)

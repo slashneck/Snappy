@@ -21,7 +21,8 @@ public sealed class Recorder : IDisposable
     private VideoEngine? _video;
     private AudioSource? _desktop;
     private AudioSource? _mic;
-    private string _videoKey = "", _audioKey = "", _studioKey = "";
+    private ProgramAudio? _programs;
+    private string _videoKey = "", _audioKey = "", _studioKey = "", _programKey = "";
     private readonly List<long> _markers = new();
     private readonly SceneTracker _sceneTracker = new();
     private StudioSetup _studio = StudioSetup.Load();
@@ -91,6 +92,11 @@ public sealed class Recorder : IDisposable
             {
                 StopAudio();
                 StartAudio();
+            }
+            else if (updated.ProgramAudioKey() != _programKey)
+            {
+                StopPrograms();
+                StartPrograms();
             }
         }
         UpdateLiveScene();
@@ -178,7 +184,8 @@ public sealed class Recorder : IDisposable
         {
             long[] markers;
             lock (_markers) markers = _markers.ToArray();
-            var result = await Task.Run(() => ClipWriter.SaveAsync(video, _desktop, _mic, Settings, seconds, app, markers));
+            var programs = _programs?.Sources();
+            var result = await Task.Run(() => ClipWriter.SaveAsync(video, _desktop, _mic, programs, Settings, seconds, app, markers));
             ClipSaved?.Invoke(result);
             if (result.Success && Settings.StorageLimitEnabled)
             {
@@ -244,7 +251,8 @@ public sealed class Recorder : IDisposable
             return new RecorderStatus("paused", "Paused", 0, Settings.BufferSeconds, 0, Encoder, saving, desktopName, micName, warnings, _liveScene?.Id ?? "");
 
         double buffered = Math.Min(Clock.HnsToSeconds(v.Ring.SpanHns()), Settings.BufferSeconds);
-        double memMb = (v.Ring.UsedBytes + (_desktop?.Ring.UsedBytes ?? 0) + (_mic?.Ring.UsedBytes ?? 0)) / (1024.0 * 1024);
+        double memMb = (v.Ring.UsedBytes + (_desktop?.Ring.UsedBytes ?? 0) + (_mic?.Ring.UsedBytes ?? 0)
+            + (_programs?.UsedBytes ?? 0)) / (1024.0 * 1024);
 
         var (state, text) = v.State switch
         {
@@ -286,6 +294,7 @@ public sealed class Recorder : IDisposable
             _mic = new AudioSource("mic", loopback: false, Settings.MicDeviceId, Settings.BufferSeconds);
             _mic.Start();
         }
+        StartPrograms();
     }
 
     private void StopAudio()
@@ -294,6 +303,21 @@ public sealed class Recorder : IDisposable
         _mic?.Dispose();
         _desktop = null;
         _mic = null;
+        StopPrograms();
+    }
+
+    private void StartPrograms()
+    {
+        _programKey = Settings.ProgramAudioKey();
+        if (!Settings.SeparateAudioTracks || !Settings.SplitAudioByProgram || !ProcessLoopback.Supported) return;
+        _programs = new ProgramAudio(Settings.DesktopAudioDeviceId, Settings.BufferSeconds);
+        _programs.Start();
+    }
+
+    private void StopPrograms()
+    {
+        _programs?.Dispose();
+        _programs = null;
     }
 
     private void OnDisplaySettingsChanged(object? sender, EventArgs e) =>

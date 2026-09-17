@@ -49,6 +49,7 @@ public sealed class LibraryWindow : Form
     private readonly CancellationTokenSource _closing = new();
     private readonly System.Windows.Forms.Timer _inputTimer = new() { Interval = 33 };
     private StudioPreview? _studioPreview;
+    private HotkeyListener? _snapHotkey;
     private string _lastInputState = "";
     private bool _ready;
 
@@ -329,12 +330,15 @@ public sealed class LibraryWindow : Form
                 };
             }
             case "studio.open":
-                _studioPreview ??= new StudioPreview(() => _recorder.Video?.Display ?? Displays.Resolve(_recorder.Settings.MonitorDeviceName));
-                // Keeps this window out of the preview so it doesn't show itself over and over.
+                _studioPreview ??= new StudioPreview();
+                // Keeps this window out of the snapshot, so Studio never photographs itself.
                 SetWindowDisplayAffinity(Handle, WDA_EXCLUDEFROMCAPTURE);
+                StartSnapHotkey();
                 _lastInputState = "";
                 _inputTimer.Start();
-                return true;
+                return new { hotkey = _recorder.Settings.StudioSnapHotkey.ToString(), hasSnapshot = _studioPreview.Snapshot != null };
+            case "studio.snap":
+                return TakeStudioSnapshot();
             case "studio.close":
                 CloseStudioPreview();
                 return true;
@@ -351,6 +355,11 @@ public sealed class LibraryWindow : Form
                 using var dlg = new OpenFileDialog { Title = "Pick a game or program", Filter = "Programs|*.exe" };
                 if (dlg.ShowDialog(this) != DialogResult.OK) return null;
                 return new { exe = Path.GetFileNameWithoutExtension(dlg.FileName), name = ForegroundApp.NameForExe(dlg.FileName) };
+            }
+            case "studio.overlayAspect":
+            {
+                var layer = System.Text.Json.JsonSerializer.Deserialize<StudioLayer>(JsonParam(p, "layer"), Json) ?? new StudioLayer();
+                return InputOverlayRenderer.AspectFor(layer);
             }
             case "studio.cameras":
                 return await WebcamDevices.ListAsync();
@@ -408,6 +417,7 @@ public sealed class LibraryWindow : Form
                     encoders = new[] { "h264_nvenc", "hevc_nvenc", "av1_nvenc", "h264_amf", "hevc_amf", "libx264" }
                         .Select(enc => new { id = enc, available = FfmpegArgs.Probe(enc) }).ToList(),
                     autostart = Autostart.IsEnabled(),
+                    programAudio = ProcessLoopback.Supported,
                     totalMemoryBytes = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes,
                     minClipSeconds = AppSettings.MinClipSeconds,
                     maxClipSeconds = AppSettings.MaxClipSeconds,
@@ -487,15 +497,48 @@ public sealed class LibraryWindow : Form
         base.OnFormClosed(e);
     }
 
+    private static int Int(string? value) => int.TryParse(value, out int n) ? n : 0;
+
     private static string JsonParam(JsonObject p, string key) =>
         p[key]?.ToJsonString() ?? throw new InvalidOperationException($"Missing {key}");
+
+    /// <summary>The snap hotkey only exists while Studio is open, so it can't get in the way during a game.</summary>
+    private void StartSnapHotkey()
+    {
+        _snapHotkey?.Dispose();
+        _snapHotkey = null;
+        var hotkey = _recorder.Settings.StudioSnapHotkey;
+        if (!hotkey.IsSet) return;
+        _snapHotkey = new HotkeyListener();
+        _snapHotkey.SetHotkeys(hotkey);
+        _snapHotkey.Pressed += _ =>
+        {
+            try
+            {
+                if (!IsDisposed) BeginInvoke(() => TakeStudioSnapshot());
+            }
+            catch (ObjectDisposedException) { }
+            catch (InvalidOperationException) { }
+        };
+    }
+
+    private bool TakeStudioSnapshot()
+    {
+        var display = _recorder.Video?.Display ?? Displays.Resolve(_recorder.Settings.MonitorDeviceName);
+        bool taken = _studioPreview?.TakeSnapshot(display) ?? false;
+        if (taken) PostEvent("studioSnapshot", null);
+        return taken;
+    }
 
     private void CloseStudioPreview()
     {
         _inputTimer.Stop();
+        _snapHotkey?.Dispose();
+        _snapHotkey = null;
         if (_studioPreview == null) return;
         _studioPreview.Dispose();
         _studioPreview = null;
+        StudioPreview.ForgetLater(TimeSpan.FromMinutes(10));
         if (IsHandleCreated) SetWindowDisplayAffinity(Handle, 0);
         try { _recorder.Studio.CleanMedia(); }
         catch (Exception ex) { Log.Warn($"Studio media cleanup failed: {ex.Message}"); }
@@ -509,14 +552,21 @@ public sealed class LibraryWindow : Form
         if (_studioPreview != null)
         {
             if (uri.AbsolutePath == "/screen.jpg")
-                bytes = _studioPreview.Screen;
+                bytes = _studioPreview.Snapshot;
             else if (uri.AbsolutePath == "/camera.jpg" && System.Web.HttpUtility.ParseQueryString(uri.Query)["device"] is { } device)
                 bytes = StudioPreview.CameraJpeg(device);
+            else if (uri.AbsolutePath == "/overlay.png")
+            {
+                var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+                if (query["layer"] is { } layerId)
+                    bytes = _studioPreview.OverlayPng(layerId, Int(query["w"]), Int(query["h"]));
+            }
         }
         var env = _web.CoreWebView2.Environment;
+        string type = uri.AbsolutePath.EndsWith(".png", StringComparison.Ordinal) ? "image/png" : "image/jpeg";
         e.Response = bytes == null
             ? env.CreateWebResourceResponse(null, 404, "Not Found", "Cache-Control: no-store")
-            : env.CreateWebResourceResponse(new MemoryStream(bytes), 200, "OK", "Content-Type: image/jpeg\r\nCache-Control: no-store");
+            : env.CreateWebResourceResponse(new MemoryStream(bytes), 200, "OK", $"Content-Type: {type}\r\nCache-Control: no-store");
     }
 
     private void PushInputState()

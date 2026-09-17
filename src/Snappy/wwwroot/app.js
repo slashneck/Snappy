@@ -806,7 +806,8 @@ function renderSettings() {
     `<option value="${esc(value)}"${String(value) === String(current) ? ' selected' : ''}${disabled ? ' disabled' : ''}>${esc(label)}</option>`;
   const row = (title, desc, control) => `<div class="row"><div class="row-text"><div class="row-title">${title}</div>${desc ? `<div class="row-desc">${desc}</div>` : ''}</div><div class="row-control">${control}</div></div>`;
   const select = (key, options) => `<select class="select" data-setting="${key}">${options}</select>`;
-  const toggle = (key, on) => `<label class="toggle"><input type="checkbox" data-setting="${key}"${on ? ' checked' : ''}><span></span></label>`;
+  const toggle = (key, on, off) =>
+    `<label class="toggle"><input type="checkbox" data-setting="${key}"${on ? ' checked' : ''}${off ? ' disabled' : ''}><span></span></label>`;
   const range = (key, min, max, step, value, unit) =>
     `<input type="range" data-setting="${key}" data-unit="${unit}" min="${min}" max="${max}" step="${step}" value="${value}" style="--fill:${((value - min) / (max - min)) * 100}%"><span class="range-value">${value}${unit}</span>`;
   const hotkey = (key) => `<button class="hotkey-input" data-hotkey="${key}">${esc(hotkeyLabel(s[key]))}</button>`;
@@ -861,6 +862,11 @@ function renderSettings() {
           + o.microphones.map((d) => opt(d.id, d.name, micValue)).join('')))}
       ${row('Mic volume', 'Only affects clips. Your Windows mic level is never touched.', range('micVolumePercent', 0, 200, 5, s.micVolumePercent, '%'))}
       ${row('Separate audio tracks', 'Adds desktop-only and mic-only tracks next to the mix, handy for editing.', toggle('separateAudioTracks', s.separateAudioTracks))}
+      ${s.separateAudioTracks ? row('Split by program',
+        o.programAudio
+          ? 'Instead of one desktop track, every program that made a sound gets its own: the game, a call, music. Up to four at a time, programs that stayed quiet are skipped. Counts for clips you save from now on.'
+          : 'Needs Windows 11.',
+        toggle('splitAudioByProgram', o.programAudio && s.splitAudioByProgram, !o.programAudio)) : ''}
     </div>
 
     <div class="settings-group" id="set-hotkeys"><h2>Hotkeys</h2>

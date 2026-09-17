@@ -28,7 +28,9 @@ recording when music is playing, and only writes to your disk when you actually 
 ## Features
 
 **Instant replay.** Up to 30 minutes, kept in RAM and encoded on your graphics card (NVIDIA NVENC, AMD AMF, or the CPU
-as a fallback). Desktop audio and your mic land on separate tracks, and the mic you picked stays picked.
+as a fallback). Desktop audio and your mic land on separate tracks, and the mic you picked stays picked. On Windows 11
+you can go further and give every program that made a sound its own track, so muting the call in the editor really
+mutes the call and leaves the game.
 
 **A library that sorts itself.** Every clip goes into a folder for the game or app you were in. Favorites, search and
 hover previews are built in, and moving a clip in Snappy moves the file on disk.
@@ -41,8 +43,10 @@ on the clip's timeline. An optional storage limit sends your oldest clips to the
 
 ## Studio
 
-Put pictures, GIFs, your facecam or your key presses into your clips. Layers are drawn into the recording only, so they
-never show up on your screen while you play.
+Put pictures, GIFs, your facecam or an input overlay into your clips: the keys you pick, a whole keyboard, or your
+mouse with its buttons and movement. Layers are drawn into the recording only, so they never show up on your screen
+while you play. Press the snap hotkey to take a still of your screen and arrange everything on top of it, right where it
+will end up.
 
 Scenes work like in OBS: set up one for your shooter with WASD on screen and another for League with QWER, link each to
 its game, and Snappy switches on its own when you start playing. One switch turns every layer off again when you want

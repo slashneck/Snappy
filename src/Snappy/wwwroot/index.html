@@ -247,6 +247,9 @@
             <h1>Studio</h1>
             <div class="subtitle">Layers you add here go into your clips. They never show on your screen.</div>
           </div>
+          <button class="btn ghost" id="snapBtn" title="Take a fresh picture of your screen to arrange layers on">
+            <svg><use href="#i-camera"/></svg>Snap screen <kbd id="snapKey">Alt + F2</kbd>
+          </button>
           <label class="studio-switch" title="Turn off for raw clips. Your scenes stay as they are.">
             <span>Layers in clips</span>
             <span class="toggle"><input type="checkbox" id="studioEnabled"><span></span></span>
@@ -257,8 +260,9 @@
             <div class="scene-bar" id="sceneBar"></div>
             <div class="studio-stage-wrap" id="studioStageWrap">
               <div class="studio-stage" id="studioStage">
-                <canvas class="studio-screen" id="studioScreen"></canvas>
+                <img class="studio-screen" id="studioScreen" alt="" hidden>
                 <div class="studio-layers" id="studioLayers"></div>
+                <div class="studio-guides" id="studioGuides"></div>
                 <div class="studio-selection" id="studioSelection"></div>
                 <div class="studio-off-pill" id="studioOffPill" hidden>Layers are off. Clips are recorded without them.</div>
                 <div class="studio-empty" id="studioEmpty" hidden></div>
@@ -326,7 +330,6 @@
   <script src="mascot.js"></script>
   <script src="app.js"></script>
   <script src="editor.js"></script>
-  <script src="overlay.js"></script>
   <script src="studio.js"></script>
 </body>
 </html>

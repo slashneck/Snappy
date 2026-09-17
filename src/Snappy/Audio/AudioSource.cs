@@ -7,12 +7,21 @@ public sealed record AudioDeviceInfo(string Id, string Name);
 
 public enum AudioSourceState { Stopped, Starting, Active, DeviceMissing, Error }
 
+/// <summary>Anything that fills a ring with 48 kHz PCM that a clip can cut a track out of.</summary>
+public interface IAudioTrackSource
+{
+    string Name { get; }
+    int Channels { get; }
+    int BlockAlign { get; }
+    RingArena Ring { get; }
+}
+
 /// <summary>
 /// Captures one audio endpoint (desktop loopback or a microphone) into a RAM ring buffer as 48 kHz 16-bit PCM,
 /// stamped with WASAPI's QPC timestamps. It pins the device you chose, never touches Windows volume settings,
 /// and silently reconnects if the device disappears, changes format, or (in "default" mode) the default changes.
 /// </summary>
-public sealed class AudioSource : IDisposable
+public sealed class AudioSource : IAudioTrackSource, IDisposable
 {
     public const int SampleRate = 48000;
 

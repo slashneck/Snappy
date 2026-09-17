@@ -38,12 +38,14 @@ public sealed class AppSettings
     public string MicDeviceId { get; set; } = "";          // empty = follow Windows default mic
     public int MicVolumePercent { get; set; } = 100;
     public bool SeparateAudioTracks { get; set; } = true;  // track 1 = mix, 2 = desktop, 3 = mic
+    public bool SplitAudioByProgram { get; set; }          // one track per program that made sound, instead of one desktop track
 
     // Hotkeys
     public HotkeySetting SaveClipHotkey { get; set; } = new() { Key = Keys.F10, Alt = true };
     public HotkeySetting SaveShortClipHotkey { get; set; } = new() { Key = Keys.F9, Alt = true };
     public HotkeySetting ScreenshotHotkey { get; set; } = new() { Key = Keys.F1, Alt = true };
     public HotkeySetting MarkMomentHotkey { get; set; } = new() { Key = Keys.None };
+    public HotkeySetting StudioSnapHotkey { get; set; } = new() { Key = Keys.F2, Alt = true };
 
     // Screenshots and storage
     public string ScreenshotsFolder { get; set; } = AppPaths.DefaultScreenshotsDir;
@@ -134,6 +136,7 @@ public sealed class AppSettings
         TrimMode = TrimMode == "precise" ? "precise" : "fast";
         ScreenshotHotkey ??= new HotkeySetting { Key = Keys.None };
         MarkMomentHotkey ??= new HotkeySetting { Key = Keys.None };
+        StudioSnapHotkey ??= new HotkeySetting { Key = Keys.None };
         if (string.IsNullOrWhiteSpace(ScreenshotsFolder)) ScreenshotsFolder = AppPaths.DefaultScreenshotsDir;
         StorageLimitGb = Math.Clamp(StorageLimitGb, 5, 100_000);
     }
@@ -144,6 +147,10 @@ public sealed class AppSettings
 
     public string AudioPipelineKey() =>
         $"{DesktopAudioEnabled}|{DesktopAudioDeviceId}|{MicEnabled}|{MicDeviceId}|{BufferSeconds}";
+
+    /// <summary>Kept apart from the audio key so turning the split on or off never empties the replay buffer.</summary>
+    public string ProgramAudioKey() =>
+        $"{SeparateAudioTracks && SplitAudioByProgram}|{DesktopAudioDeviceId}|{BufferSeconds}";
 }
 
 public sealed class HotkeySetting

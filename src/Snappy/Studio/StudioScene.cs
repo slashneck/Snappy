@@ -19,6 +19,7 @@ public sealed class StudioLayer
 
     // image, gif
     public string File { get; set; } = "";
+    public string Fit { get; set; } = "fill"; // fill stretches into the box, fit keeps the picture's shape
 
     // webcam
     public string Device { get; set; } = "";
@@ -26,7 +27,10 @@ public sealed class StudioLayer
     public bool Mirror { get; set; }
 
     // inputs
-    public string Style { get; set; } = "keys"; // keys | cat
+    public string Input { get; set; } = "keys";  // keys | keyboard | mouse | controller | cat
+    public string Design { get; set; } = "";     // depends on the kind, empty picks the default
+    public string Accent { get; set; } = "#f4f4f4";
+    public string Style { get; set; } = "keys";  // older scenes said keys or cat, Input took over
     public List<string> Presets { get; set; } = new() { "shooter" };
     public List<int> ExtraKeys { get; set; } = new(); // virtual key codes
     public bool ShowKeys { get; set; } = true;
@@ -93,7 +97,11 @@ public sealed class StudioScene
             l.File = Path.GetFileName(l.File ?? ""); // only ever a file inside the Studio folder
             l.Device ??= "";
             l.Shape = l.Shape is "rect" or "circle" ? l.Shape : "rounded";
+            l.Fit = l.Fit == "fit" ? "fit" : "fill";
             l.Style = l.Style == "cat" ? "cat" : "keys";
+            l.Input = InputOverlayRenderer.Kind(l);
+            l.Design = InputOverlayRenderer.Design(l);
+            l.Accent = StudioSetup.Hex(l.Accent);
             l.Presets ??= new List<string>();
             l.ExtraKeys ??= new List<int>();
             l.ExtraKeys.RemoveAll(k => k is < 1 or > 254);
@@ -211,6 +219,9 @@ public sealed class StudioSetup
     }
 
     public static string NewId() => Guid.NewGuid().ToString("N")[..8];
+
+    internal static string Hex(string? color) =>
+        color != null && color.Length == 7 && color[0] == '#' && color[1..].All(Uri.IsHexDigit) ? color.ToLowerInvariant() : "#f4f4f4";
 
     internal static string CleanId(string? id)
     {

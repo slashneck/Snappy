@@ -169,6 +169,35 @@
     }, 2200 + Math.random() * 3800);
   })();
 
+  // ----- it notices when you poke it, and gets excited if you keep going -----
+  let pets = 0, petTimer = 0;
+  document.addEventListener('pointerdown', (e) => {
+    const el = e.target.closest?.('.mascot');
+    if (!el || frozen || !instances.has(el)) return;
+    el.classList.remove('pet');
+    void el.offsetWidth;
+    el.classList.add('pet');
+    setTimeout(() => el.classList.remove('pet'), 620);
+    clearTimeout(petTimer);
+    petTimer = setTimeout(() => { pets = 0; }, 1800);
+    if (++pets >= 3) { pets = 0; flash('happy', 1100); }
+  }, { passive: true });
+
+  // ----- a stretch now and then, only when nothing else is going on -----
+  (function scheduleStretch() {
+    setTimeout(() => {
+      if (!frozen && !flashMood && !holds.length && (base === 'idle' || base === 'recording')) {
+        for (const el of instances) {
+          if (el.isConnected && el.getBoundingClientRect().width >= 56) {
+            el.classList.add('stretch');
+            setTimeout(() => el.classList.remove('stretch'), 1500);
+          }
+        }
+      }
+      scheduleStretch();
+    }, 26000 + Math.random() * 34000);
+  })();
+
   // ----- deterministic rendering for icon / overlay frame generation (build tooling only) -----
   function freeze(mood, timeMs, lx = 0, ly = 0) {
     frozen = true;
