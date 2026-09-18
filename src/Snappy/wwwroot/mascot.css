@@ -13,9 +13,14 @@
 
 /* Idle life: breathing, blinking, looking around */
 .mascot .m-body { transform-origin: 50% 100%; animation: m-breathe 3.6s ease-in-out infinite; }
-.mascot .m-eye { transition: transform .07s ease-out; }
-.mascot.blink .m-eye { transform: scaleY(.08) !important; }
-.mascot .m-eye-open { transform: translate(calc(var(--lx) * 9px), calc(var(--ly) * 8px)); transition: transform .22s cubic-bezier(.2, .8, .2, 1); }
+.mascot .m-eye { transition: transform .16s cubic-bezier(.2, .8, .2, 1); }
+.mascot.blink .m-eye { transform: scaleY(.08) !important; transition-duration: .06s; } /* shut fast, open a touch slower */
+.mascot .m-eye-open {
+  transform: translate(calc(var(--lx) * 9px), calc(var(--ly) * 8px));
+  transition: transform .22s cubic-bezier(.2, .8, .2, 1), opacity .15s ease;
+}
+/* eyes fade from one shape to the next instead of popping when the mood changes */
+.mascot .m-eye-happy, .mascot .m-eye-sleep, .mascot .m-eye-x, .mascot .m-eye-dizzy { transition: opacity .15s ease; }
 .mascot .m-blade-a, .mascot .m-blade-b { transform-box: view-box; transform-origin: 188px 174px; }
 .mascot .m-pop-l { --dir: -9px; }
 .mascot .m-pop-r { --dir: 9px; }
@@ -77,8 +82,8 @@
 }
 @keyframes m-press { 0% { transform: none; } 30% { transform: translateY(8px); } 100% { transform: none; } }
 @keyframes m-flash { 0% { opacity: 0; transform: scale(.2) rotate(-25deg); } 18% { opacity: 1; transform: scale(1.15) rotate(0); } 100% { opacity: 0; transform: scale(1.7) rotate(14deg); } }
-@keyframes m-eyes-away { 0%, 12% { opacity: 1; } 13%, 86% { opacity: 0; } 87%, 100% { opacity: 1; } }
-@keyframes m-eyes-in { 0%, 12% { opacity: 0; } 13%, 86% { opacity: 1; } 87%, 100% { opacity: 0; } }
+@keyframes m-eyes-away { 0%, 8% { opacity: 1; } 16%, 82% { opacity: 0; } 92%, 100% { opacity: 1; } }
+@keyframes m-eyes-in { 0%, 8% { opacity: 0; } 16%, 82% { opacity: 1; } 92%, 100% { opacity: 0; } }
 @keyframes m-shadow-squash { 14% { transform: scaleX(1.12); } 34% { transform: scaleX(.78); opacity: .15; } 56% { transform: scaleX(1.04); } 100% { transform: none; } }
 
 /* happy: double hop */
@@ -108,6 +113,14 @@
 .mascot[data-mood="problem"] .m-eye-open { animation: m-worry 2.2s ease-in-out infinite; }
 @keyframes m-worry { 0%, 100% { transform: translate(-7px, 2px); } 50% { transform: translate(7px, 2px); } }
 
+/* cheeks show up whenever it's being fussed over */
+.mascot .m-blush { opacity: 0; transition: opacity .25s; }
+.mascot.pet .m-blush, .mascot.love .m-blush, .mascot.rub .m-blush { opacity: .9; }
+.mascot .m-heart, .mascot .m-eye-dizzy { opacity: 0; }
+
+/* the pointer comes close: eyes open a little wider */
+.mascot.curious .m-eye { transform: scale(1.1); }
+
 /* a poke: squish down, eyes go happy */
 .mascot.pet .m-body { animation: m-pet .62s cubic-bezier(.2, .8, .2, 1) both; }
 .mascot.pet .m-shadow { animation: m-shadow-squash .62s ease-out both; }
@@ -119,6 +132,41 @@
   62% { transform: translateY(-3px) scale(.98, 1.03); }
   100% { transform: none; }
 }
+
+/* three quick pokes: a hop and a few hearts */
+.mascot.love .m-body { animation: m-hop 1.1s cubic-bezier(.3, .7, .3, 1) both; }
+.mascot.love .m-shadow { animation: m-shadow-hop 1.1s ease-out both; }
+.mascot.love .m-eye-open { opacity: 0; }
+.mascot.love .m-eye-happy { opacity: 1; }
+.mascot.love .m-heart { animation: m-heart 1.3s ease-out both; }
+.mascot.love .h2 { animation-delay: .14s; }
+.mascot.love .h3 { animation-delay: .28s; }
+@keyframes m-heart {
+  0% { opacity: 0; transform: translateY(8px) scale(.3); }
+  25% { opacity: 1; transform: translateY(-4px) scale(1.05); }
+  100% { opacity: 0; transform: translateY(-34px) scale(.9); }
+}
+
+/* keep poking and it gets dizzy */
+.mascot.dizzy .m-eye-open { opacity: 0; }
+.mascot .m-eye-dizzy { stroke-width: 4.4; }
+.mascot.dizzy .m-eye-dizzy { opacity: 1; animation: m-spin .55s linear infinite; }
+.mascot.dizzy .m-body { animation: m-wobble 1.7s ease-in-out both; }
+.mascot.dizzy .m-shadow { animation: m-shadow-squash 1.7s ease-in-out both; }
+@keyframes m-spin { to { transform: rotate(360deg); } }
+@keyframes m-wobble {
+  0%, 100% { transform: none; }
+  15% { transform: rotate(-7deg) translateX(-3px); }
+  35% { transform: rotate(6deg) translateX(3px); }
+  55% { transform: rotate(-4deg); }
+  75% { transform: rotate(2.5deg); }
+}
+
+/* rub it: eyes close happily and it sways along */
+.mascot.rub .m-eye-open { opacity: 0; }
+.mascot.rub .m-eye-happy { opacity: 1; }
+.mascot.rub .m-body { animation: m-sway .75s ease-in-out infinite; }
+@keyframes m-sway { 0%, 100% { transform: rotate(-3deg) scale(1.01, .99); } 50% { transform: rotate(3deg) scale(1.01, .99); } }
 
 /* the odd stretch while it waits around */
 .mascot.stretch .m-body { animation: m-stretch 1.5s ease-in-out both; }

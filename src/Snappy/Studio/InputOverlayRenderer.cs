@@ -85,6 +85,14 @@ public sealed class InputOverlayRenderer : IDisposable
 
     public static bool NeedsGamepad(StudioLayer layer) => Kind(layer) == "controller";
 
+    /// <summary>Whether the layer draws the mouse. Only then does Snappy listen to it at all.</summary>
+    public static bool NeedsMouse(StudioLayer layer) => Kind(layer) switch
+    {
+        "mouse" => true,
+        "controller" => false,
+        _ => layer.ShowMouse,
+    };
+
     /// <summary>Width divided by height of the drawing, so a layer can keep its shape while being resized.</summary>
     public static double AspectFor(StudioLayer layer)
     {
@@ -251,11 +259,47 @@ public sealed class InputOverlayRenderer : IDisposable
     /// <summary>Renders one frame and copies it (BGRA, top down) into <paramref name="destination"/>.</summary>
     public void Render(InputState state, GamepadState? pad, byte[] destination)
     {
+        // Most frames look exactly like the one before (nothing pressed, mouse still), so only draw when that changes.
+        // The recording hands in the same buffer every frame, so the last drawing is still sitting in it.
+        int look = Look(state, pad);
+        if (look == _drawnLook && ReferenceEquals(destination, _drawnInto)) return;
+        _drawnLook = look;
+        _drawnInto = destination;
         Draw(state, pad);
         if (_layer.Opacity < 0.999) ApplyOpacity();
         var data = _bitmap.LockBits(new Rectangle(0, 0, Width, Height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
         try { Marshal.Copy(data.Scan0, destination, 0, Width * Height * 4); }
         finally { _bitmap.UnlockBits(data); }
+    }
+
+    private int _drawnLook;
+    private byte[]? _drawnInto;
+
+    /// <summary>Everything that changes what a frame looks like, folded into one number.</summary>
+    private int Look(InputState state, GamepadState? pad)
+    {
+        int keys = 0, buttons = 0;
+        foreach (int k in state.Keys) keys += k * 40503 + 1; // order doesn't matter, so a plain sum works
+        foreach (int b in state.Buttons) buttons |= 1 << b;
+        var h = new HashCode();
+        h.Add(keys);
+        h.Add(state.Keys.Count);
+        h.Add(buttons);
+        h.Add(state.Wheel);
+        if (_kind == "mouse" || _layer.ShowMouse)
+        {
+            h.Add((int)state.Vx);
+            h.Add((int)state.Vy);
+        }
+        if (_kind == "cat") h.Add(state.TimeMs % 4200 < 130);
+        if (pad != null)
+        {
+            h.Add(pad.Connected);
+            h.Add(pad.Buttons);
+            foreach (float axis in new[] { pad.LeftX, pad.LeftY, pad.RightX, pad.RightY, pad.LeftTrigger, pad.RightTrigger })
+                h.Add((int)(axis * 100));
+        }
+        return h.ToHashCode();
     }
 
     /// <summary>Renders one frame as a PNG, used by the Studio preview.</summary>

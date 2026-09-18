@@ -397,7 +397,7 @@ const Studio = (() => {
     const out = [];
     if (S.error) out.push(`<div class="error">Layers are paused because recording couldn't start with them: ${esc(S.error)}</div>`);
     if (sc.layers.some((l) => l.type === 'webcam' && l.visible)) out.push('<div>While this scene is in use, the camera stays on in the background so the replay can include it.</div>');
-    if (sc.layers.length) out.push('<div>Layers use a little extra CPU while recording. Clips you already saved keep their old look.</div>');
+    if (sc.layers.length) out.push('<div>To draw layers into the recording, every frame is copied through your CPU, which costs noticeably more than recording without them. The switch at the top turns them off and keeps your scenes. Clips you already saved keep their old look.</div>');
     return out.join('');
   }
 

@@ -53,6 +53,25 @@ public sealed class AudioSource : IAudioTrackSource, IDisposable
 
     public void Start() => _thread.Start();
 
+    /// <summary>Loudest sample of the last moment, 0 to 1, for the level meter in Settings.</summary>
+    public float RecentPeak(long windowHns = 1_200_000)
+    {
+        var entries = Ring.Snapshot(Clock.NowHns() - windowHns);
+        int peak = 0;
+        byte[] chunk = Array.Empty<byte>();
+        foreach (var e in entries)
+        {
+            if (chunk.Length < e.Length) chunk = new byte[e.Length];
+            if (!Ring.TryRead(e, chunk)) continue;
+            foreach (short sample in MemoryMarshal.Cast<byte, short>(chunk.AsSpan(0, e.Length)))
+            {
+                int level = Math.Abs((int)sample);
+                if (level > peak) peak = level;
+            }
+        }
+        return Math.Min(1f, peak / 32767f);
+    }
+
     public void Dispose()
     {
         _stop = true;

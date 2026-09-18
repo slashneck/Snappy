@@ -414,13 +414,21 @@ public sealed class LibraryWindow : Form
                     displays = Displays.Enumerate(),
                     microphones = AudioSource.ListDevices(capture: true),
                     outputs = AudioSource.ListDevices(capture: false),
-                    encoders = new[] { "h264_nvenc", "hevc_nvenc", "av1_nvenc", "h264_amf", "hevc_amf", "libx264" }
+                    encoders = new[] { "h264_nvenc", "hevc_nvenc", "av1_nvenc", "h264_amf", "hevc_amf", "h264_qsv", "hevc_qsv", "libx264" }
                         .Select(enc => new { id = enc, available = FfmpegArgs.Probe(enc) }).ToList(),
                     autostart = Autostart.IsEnabled(),
                     programAudio = ProcessLoopback.Supported,
                     totalMemoryBytes = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes,
                     minClipSeconds = AppSettings.MinClipSeconds,
                     maxClipSeconds = AppSettings.MaxClipSeconds,
+                };
+            case "settings.advice":
+                return await Task.Run(() => PerformanceAdvisor.For(_recorder.Settings, _recorder.Encoder, _recorder.LiveScene));
+            case "audio.levels":
+                return new
+                {
+                    desktop = _recorder.DesktopAudio is { State: AudioSourceState.Active } d ? d.RecentPeak() : -1,
+                    mic = _recorder.MicAudio is { State: AudioSourceState.Active } m ? m.RecentPeak() : -1,
                 };
             case "settings.save":
             {
@@ -479,6 +487,32 @@ public sealed class LibraryWindow : Form
             FormBorderStyle = FormBorderStyle.Sizable;
             Bounds = _restoreBounds;
             WindowState = _restoreState;
+        }
+    }
+
+    private bool _asleep;
+
+    /// <summary>
+    /// A minimized window has nothing to show. The page already stops drawing on its own then, and Snappy stops
+    /// feeding it status and input updates until it comes back, so nothing runs for it while you play.
+    /// </summary>
+    protected override void OnSizeChanged(EventArgs e)
+    {
+        base.OnSizeChanged(e);
+        if (!_ready) return;
+        bool minimized = WindowState == FormWindowState.Minimized;
+        if (minimized == _asleep) return;
+        _asleep = minimized;
+        if (minimized)
+        {
+            _statusTimer.Stop();
+            _inputTimer.Stop();
+        }
+        else
+        {
+            _statusTimer.Start();
+            if (_studioPreview != null) _inputTimer.Start();
+            PostEvent("status", _recorder.GetStatus());
         }
     }
 

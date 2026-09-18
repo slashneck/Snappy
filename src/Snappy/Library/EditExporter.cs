@@ -252,6 +252,7 @@ public static class EditExporter
                 ? new List<string> { "-c:v", encoder, "-preset", "p6", "-rc", "vbr", "-multipass", "fullres", "-b:v", rate, "-maxrate", maxrate, "-bufsize", bufsize, "-pix_fmt", "yuv420p" }
                 : new List<string> { "-c:v", encoder, "-preset", "p5", "-rc", "vbr", "-cq", "19", "-b:v", "0", "-maxrate", maxrate, "-bufsize", maxrate, "-pix_fmt", "yuv420p" },
             "h264_amf" or "hevc_amf" => new List<string> { "-c:v", encoder, "-quality", "quality", "-rc", "vbr_peak", "-b:v", rate, "-maxrate", maxrate },
+            "h264_qsv" or "hevc_qsv" => new List<string> { "-c:v", encoder, "-preset", "medium", "-b:v", rate, "-maxrate", maxrate, "-bufsize", bufsize, "-pix_fmt", "nv12" },
             _ => fixedBitrate
                 ? new List<string> { "-c:v", "libx264", "-preset", "medium", "-b:v", rate, "-maxrate", maxrate, "-bufsize", bufsize, "-pix_fmt", "yuv420p" }
                 : new List<string> { "-c:v", "libx264", "-preset", "medium", "-crf", "19", "-pix_fmt", "yuv420p" },

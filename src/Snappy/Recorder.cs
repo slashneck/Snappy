@@ -118,7 +118,8 @@ public sealed class Recorder : IDisposable
     private StudioScene? PickScene()
     {
         if (!Settings.StudioEnabled) return null;
-        var gameScene = Settings.StudioAutoSwitch ? _sceneTracker.Update(_studio) : null;
+        // Looking at the window in front only matters when some scene is linked to a game.
+        var gameScene = Settings.StudioAutoSwitch && _studio.Scenes.Any(s => s.Apps.Count > 0) ? _sceneTracker.Update(_studio) : null;
         return gameScene ?? _studio.DefaultScene;
     }
 

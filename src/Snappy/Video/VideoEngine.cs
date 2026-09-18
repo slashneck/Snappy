@@ -251,7 +251,11 @@ public sealed class VideoEngine : IDisposable
         using var proc = Process.Start(psi) ?? throw new InvalidOperationException("Could not start ffmpeg");
         _proc = proc;
         ChildProcessJob.Attach(proc);
-        try { proc.PriorityClass = ProcessPriorityClass.AboveNormal; } catch { }
+        // Above normal only while FFmpeg just passes textures along. When it copies frames or encodes on the CPU it
+        // does real work, and above normal would take that time straight from the game.
+        var priority = FfmpegArgs.IsLight(mode, studio != null) ? ProcessPriorityClass.AboveNormal
+            : mode.Encoder == "libx264" ? ProcessPriorityClass.BelowNormal : ProcessPriorityClass.Normal;
+        try { proc.PriorityClass = priority; } catch { }
 
         lock (_stderrTail) _stderrTail.Clear();
         proc.ErrorDataReceived += (_, e) =>

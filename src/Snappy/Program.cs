@@ -29,6 +29,8 @@ internal static class Program
             return SelfTest.RenderTrayMenu(args[1]);
         if (args.Length > 0 && args[0] == "--test-ring")
             return SelfTest.RingArenaTest();
+        if (args.Length > 0 && args[0] == "--test-input")
+            return SelfTest.InputTest();
         if (args.Length > 0 && args[0] == "--test-programs")
             return SelfTest.ProgramAudioTest(args.Length > 1 ? int.Parse(args[1]) : 10);
         if (args.Length > 2 && args[0] == "--test-export")
@@ -197,6 +199,45 @@ internal static class SelfTest
     }
 
     /// <summary>Records for a while, saves a clip, reports and exits.</summary>
+    /// <summary>
+    /// Makes a listener, drops it, makes another (what leaving Studio does), then holds Shift and nudges the mouse
+    /// and checks the second listener saw both.
+    /// </summary>
+    public static int InputTest()
+    {
+        var first = new object();
+        var second = new object();
+        Snappy.Input.InputHub.Claim(first, new[] { 0x10 }, false);
+        Thread.Sleep(300);
+        Snappy.Input.InputHub.Release(first);
+        var listener = Snappy.Input.InputHub.Claim(second, new[] { 0x10, 0x11 }, true);
+        Thread.Sleep(300);
+
+        TestInput.Key(0x10, down: true);
+        Thread.Sleep(120);
+        var held = listener.Live();
+        TestInput.Key(0x10, down: false);
+        Thread.Sleep(120);
+        var released = listener.Live();
+        for (int i = 0; i < 40; i++) { TestInput.Move(3, 0); Thread.Sleep(1); }
+        var moved = listener.Live();
+        for (int i = 0; i < 40; i++) TestInput.Move(-3, 0);
+        Snappy.Input.InputHub.Release(second);
+
+        bool ok = held.Keys.Contains(0x10) && !released.Keys.Contains(0x10) && moved.Vx > 0;
+        Console.WriteLine($"held shift seen={held.Keys.Contains(0x10)} released seen={released.Keys.Contains(0x10)} mouse vx={moved.Vx}");
+        Console.WriteLine(ok ? "INPUT OK" : "INPUT FAILED");
+        return ok ? 0 : 1;
+    }
+
+    private static class TestInput
+    {
+        [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
+        [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern void mouse_event(uint flags, int dx, int dy, uint data, UIntPtr extra);
+        public static void Key(byte vk, bool down) => keybd_event(vk, 0, down ? 0u : 2u, UIntPtr.Zero);
+        public static void Move(int dx, int dy) => mouse_event(0x0001 /* MOVE */, dx, dy, 0, UIntPtr.Zero);
+    }
+
     /// <summary>Watches the per-program capture and prints how its packets sit on the clock.</summary>
     public static int ProgramAudioTest(int seconds)
     {

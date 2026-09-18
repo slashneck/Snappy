@@ -27,8 +27,8 @@ recording when music is playing, and only writes to your disk when you actually 
 
 ## Features
 
-**Instant replay.** Up to 30 minutes, kept in RAM and encoded on your graphics card (NVIDIA NVENC, AMD AMF, or the CPU
-as a fallback). Desktop audio and your mic land on separate tracks, and the mic you picked stays picked. On Windows 11
+**Instant replay.** Up to 30 minutes, kept in RAM and encoded on your graphics card (NVIDIA NVENC, AMD AMF, Intel Quick
+Sync, or the CPU as a fallback). Desktop audio and your mic land on separate tracks, and the mic you picked stays picked. On Windows 11
 you can go further and give every program that made a sound its own track, so muting the call in the editor really
 mutes the call and leaves the game.
 

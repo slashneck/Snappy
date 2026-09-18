@@ -26,7 +26,7 @@ public sealed class AppSettings
     public string MonitorDeviceName { get; set; } = ""; // e.g. \\.\DISPLAY1; empty = primary monitor
     public int Fps { get; set; } = 60;
     public int OutputHeight { get; set; } = 0;          // 0 = native resolution
-    public string Encoder { get; set; } = "auto";       // auto | h264_nvenc | hevc_nvenc | av1_nvenc | h264_amf | hevc_amf | libx264
+    public string Encoder { get; set; } = "auto";       // auto | h264_nvenc | hevc_nvenc | av1_nvenc | h264_amf | hevc_amf | h264_qsv | hevc_qsv | libx264
     public int BitrateMbps { get; set; } = 20;
     public bool CaptureCursor { get; set; } = true;
 

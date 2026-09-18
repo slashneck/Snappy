@@ -47,6 +47,7 @@ public static class ClipTrimmer
             {
                 "h264_nvenc" or "hevc_nvenc" or "av1_nvenc" => new[] { "-c:v", encoder, "-preset", "p5", "-rc", "vbr", "-cq", "19", "-b:v", "0", "-maxrate", maxrate, "-bufsize", maxrate },
                 "h264_amf" or "hevc_amf" => new[] { "-c:v", encoder, "-quality", "quality", "-rc", "vbr_peak", "-b:v", sourceBitrate.ToString(CultureInfo.InvariantCulture), "-maxrate", maxrate },
+                "h264_qsv" or "hevc_qsv" => new[] { "-c:v", encoder, "-preset", "medium", "-b:v", sourceBitrate.ToString(CultureInfo.InvariantCulture), "-maxrate", maxrate, "-pix_fmt", "nv12" },
                 _ => new[] { "-c:v", "libx264", "-preset", "medium", "-crf", "19", "-pix_fmt", "yuv420p" },
             });
             if (encoder.StartsWith("hevc", StringComparison.Ordinal)) args.AddRange(new[] { "-tag:v", "hvc1" });

@@ -229,7 +229,7 @@ internal sealed class InputsSource : ILayerSource
     public InputsSource(StudioLayer layer, int w, int h)
     {
         _renderer = new InputOverlayRenderer(layer, w, h);
-        _listener = InputHub.Claim(this, InputOverlayRenderer.KeysFor(layer));
+        _listener = InputHub.Claim(this, InputOverlayRenderer.KeysFor(layer), InputOverlayRenderer.NeedsMouse(layer));
         _gamepad = InputOverlayRenderer.NeedsGamepad(layer);
         if (_gamepad) GamepadHub.Claim(this);
     }

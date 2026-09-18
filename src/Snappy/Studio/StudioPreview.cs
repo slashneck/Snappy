@@ -90,7 +90,7 @@ public sealed class StudioPreview : IDisposable
             foreach (var renderer in _overlays.Values) renderer.Dispose();
             _overlays.Clear();
 
-            if (inputs.Count > 0) _input = InputHub.Claim(this, inputs.SelectMany(InputOverlayRenderer.KeysFor));
+            if (inputs.Count > 0) _input = InputHub.Claim(this, inputs.SelectMany(InputOverlayRenderer.KeysFor), inputs.Any(InputOverlayRenderer.NeedsMouse));
             else if (_input != null)
             {
                 InputHub.Release(this);

@@ -15,7 +15,13 @@
       <path class="m-ink m-eye-happy" d="M-15 6 Q0 -14 15 6" fill="none" stroke-width="8"/>
       <path class="m-ink m-eye-sleep" d="M-15 1 Q0 9 15 1" fill="none" stroke-width="8"/>
       <path class="m-ink m-eye-x" d="M-10 -10 L10 10 M10 -10 L-10 10" fill="none" stroke-width="8"/>
+      <path class="m-ink m-eye-dizzy" d="M1.4 0 a2.1 2.1 0 1 1 4.2 0 a5.6 5.6 0 1 1 -11.2 0 a9.1 9.1 0 1 1 18.2 0 a12.6 12.6 0 1 1 -25.2 0"
+            fill="none"/>
     </g></g>`;
+
+  const heart = (cls, x, y, s) => `
+    <g transform="translate(${x} ${y}) scale(${s})"><path class="m-heart ${cls}" fill="#ff7a93" stroke="#0a0a0a" stroke-width="2.4"
+      stroke-linejoin="round" d="M0 5 C-7 0 -8 -5.5 -4 -7.5 C-2 -8.5 0 -7 0 -5 C0 -7 2 -8.5 4 -7.5 C8 -5.5 7 0 0 5 Z"/></g>`;
 
   const svg = () => `
 <svg viewBox="-16 -18 232 222" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -33,6 +39,8 @@
     <rect class="m-tiny-hide" x="38" y="76" width="30" height="12" rx="6" fill="#0a0a0a"/>
     <circle class="m-ink m-rec" cx="158" cy="82" r="7.5" stroke-width="4.5"/>
 
+    <ellipse class="m-blush" cx="50" cy="147" rx="11" ry="6.5" fill="#ff9db0"/>
+    <ellipse class="m-blush" cx="150" cy="147" rx="11" ry="6.5" fill="#ff9db0"/>
     ${eye(72)}
     ${eye(128)}
 
@@ -42,6 +50,8 @@
       <circle class="m-dot d3" cx="113" cy="160" r="4.5"/>
     </g>
   </g>
+
+  <g class="m-hearts">${heart('h1', 30, 26, 1.5)}${heart('h2', 100, 0, 1.9)}${heart('h3', 170, 22, 1.4)}</g>
 
   <g class="m-pop m-pop-l" stroke="#f4f4f4" stroke-width="6" stroke-linecap="round">
     <path d="M-2 62 L-12 52"/><path d="M-6 98 L-18 98"/><path d="M-2 134 L-12 144"/>
@@ -169,18 +179,60 @@
     }, 2200 + Math.random() * 3800);
   })();
 
-  // ----- it notices when you poke it, and gets excited if you keep going -----
-  let pets = 0, petTimer = 0;
-  document.addEventListener('pointerdown', (e) => {
-    const el = e.target.closest?.('.mascot');
-    if (!el || frozen || !instances.has(el)) return;
-    el.classList.remove('pet');
+  // ----- being fussed over -----
+  // A tap squishes it, three quick taps get a hop and hearts, and if you keep going it gets dizzy. Rubbing the
+  // pointer back and forth over it makes it close its eyes and lean into it.
+  const reactions = ['pet', 'love', 'dizzy', 'rub', 'curious'];
+  const mascotAt = (target) => {
+    const el = target?.closest?.('.mascot');
+    return el && !frozen && instances.has(el) ? el : null;
+  };
+  function react(el, cls, ms) {
+    el.classList.remove(cls);
     void el.offsetWidth;
-    el.classList.add('pet');
-    setTimeout(() => el.classList.remove('pet'), 620);
-    clearTimeout(petTimer);
-    petTimer = setTimeout(() => { pets = 0; }, 1800);
-    if (++pets >= 3) { pets = 0; flash('happy', 1100); }
+    el.classList.add(cls);
+    el._timers ||= {};
+    clearTimeout(el._timers[cls]);
+    el._timers[cls] = setTimeout(() => el.classList.remove(cls), ms);
+  }
+
+  document.addEventListener('pointerdown', (e) => {
+    const el = mascotAt(e.target);
+    if (!el || el.classList.contains('dizzy')) return;
+    const now = performance.now();
+    el._taps = (el._taps || []).filter((t) => now - t < 2400);
+    el._taps.push(now);
+    if (el._taps.length >= 6) {
+      el._taps = [];
+      el.classList.remove('pet', 'love');
+      react(el, 'dizzy', 1700);
+    } else if (el._taps.length === 3) {
+      react(el, 'love', 1400);
+    } else {
+      react(el, 'pet', 620);
+    }
+  }, { passive: true });
+
+  document.addEventListener('pointermove', (e) => {
+    const el = mascotAt(e.target);
+    const dir = Math.sign(e.movementX);
+    if (!el || !dir) return;
+    const now = performance.now();
+    if (dir !== el._dir) {
+      el._dir = dir;
+      el._turns = (el._turns || []).filter((t) => now - t < 900);
+      el._turns.push(now);
+    }
+    if (el._turns.length < 4) return;
+    el.classList.add('rub');
+    clearTimeout(el._rubEnd);
+    el._rubEnd = setTimeout(() => el.classList.remove('rub'), 500);
+  }, { passive: true });
+
+  document.addEventListener('pointerover', (e) => mascotAt(e.target)?.classList.add('curious'), { passive: true });
+  document.addEventListener('pointerout', (e) => {
+    const el = mascotAt(e.target);
+    if (el && !el.contains(e.relatedTarget)) el.classList.remove('curious');
   }, { passive: true });
 
   // ----- a stretch now and then, only when nothing else is going on -----
@@ -211,7 +263,7 @@
       el.dataset.mood = '';
       void el.offsetWidth;
       el.dataset.mood = mood;
-      el.classList.remove('blink');
+      el.classList.remove('blink', 'stretch', ...reactions);
       el.classList.add('frozen');
       el.style.setProperty('--lx', lx);
       el.style.setProperty('--ly', ly);

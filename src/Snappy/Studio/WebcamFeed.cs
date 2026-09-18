@@ -64,12 +64,14 @@ public sealed partial class WebcamFeed : IDisposable
             UseShellExecute = false, CreateNoWindow = true,
             RedirectStandardOutput = true, RedirectStandardError = true, RedirectStandardInput = true,
         };
-        var args = new List<string> { "-hide_banner", "-nostdin", "-f", "dshow", "-rtbufsize", "32M" };
+        // Two decoder threads and one for the filters: a camera doesn't need more, and every extra thread is one more
+        // thing competing with the game.
+        var args = new List<string> { "-hide_banner", "-nostdin", "-filter_threads", "1", "-f", "dshow", "-rtbufsize", "32M" };
         if (preferHd) args.AddRange(new[] { "-video_size", "1280x720", "-framerate", "30" });
         args.AddRange(new[]
         {
-            "-i", $"video={Device}",
-            "-vf", $"scale=w='min({MaxWidth},iw)':h=-2,fps=30,format=bgra",
+            "-threads", "2", "-i", $"video={Device}",
+            "-vf", $"scale=w='min({MaxWidth},iw)':h=-2:flags=bilinear,fps=30,format=bgra",
             "-f", "rawvideo", "pipe:1",
         });
         foreach (string a in args) psi.ArgumentList.Add(a);
@@ -77,6 +79,7 @@ public sealed partial class WebcamFeed : IDisposable
         using var proc = Process.Start(psi) ?? throw new InvalidOperationException("Could not start ffmpeg");
         _proc = proc;
         ChildProcessJob.Attach(proc);
+        try { proc.PriorityClass = ProcessPriorityClass.BelowNormal; } catch { } // a late camera frame beats a slower game
         proc.StandardInput.Close();
 
         int width = 0, height = 0;
@@ -112,9 +115,13 @@ public sealed partial class WebcamFeed : IDisposable
             var stdout = proc.StandardOutput.BaseStream;
             int frameBytes = width * height * 4;
             long seq = 0;
+            // A few frames take turns instead of a fresh 2 MB array per camera frame, which kept the garbage collector
+            // busy 30 times a second. Readers only ever look at the newest one, so four is plenty of slack.
+            var pool = new byte[4][];
+            for (int i = 0; i < pool.Length; i++) pool[i] = new byte[frameBytes];
             while (!_stop)
             {
-                var frame = new byte[frameBytes];
+                var frame = pool[seq % pool.Length];
                 if (!ReadExactly(stdout, frame)) break;
                 _latest = new WebcamFrame(frame, width, height, ++seq);
                 if (!gotFrames)

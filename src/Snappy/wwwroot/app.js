@@ -63,7 +63,8 @@ function dayLabel(date) {
 const fmtWhen = (date) => `${dayLabel(date)}, ${date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
 const ENCODER_LABELS = {
   h264_nvenc: 'NVIDIA NVENC · H.264', hevc_nvenc: 'NVIDIA NVENC · HEVC', av1_nvenc: 'NVIDIA NVENC · AV1',
-  h264_amf: 'AMD AMF · H.264', hevc_amf: 'AMD AMF · HEVC', libx264: 'CPU · x264 (heavier)',
+  h264_amf: 'AMD AMF · H.264', hevc_amf: 'AMD AMF · HEVC', h264_qsv: 'Intel Quick Sync · H.264',
+  hevc_qsv: 'Intel Quick Sync · HEVC', libx264: 'CPU · x264 (heavier)',
 };
 const encoderLabel = (id) => ENCODER_LABELS[id] || id;
 
@@ -811,6 +812,7 @@ function renderSettings() {
   const range = (key, min, max, step, value, unit) =>
     `<input type="range" data-setting="${key}" data-unit="${unit}" min="${min}" max="${max}" step="${step}" value="${value}" style="--fill:${((value - min) / (max - min)) * 100}%"><span class="range-value">${value}${unit}</span>`;
   const hotkey = (key) => `<button class="hotkey-input" data-hotkey="${key}">${esc(hotkeyLabel(s[key]))}</button>`;
+  const meter = (source) => `<div class="level" data-level="${source}" title="Live level"><i></i></div>`;
 
   const primary = o.displays.find((d) => d.isPrimary)?.deviceName || '';
   const desktopValue = s.desktopAudioEnabled ? (s.desktopAudioDeviceId || 'default') : 'off';
@@ -839,6 +841,7 @@ function renderSettings() {
     </div>
 
     <div class="settings-group" id="set-video"><h2>Video</h2>
+      <div class="advice-list" id="adviceList"></div>
       ${row('Monitor', 'Which screen Snappy records.',
         select('monitorDeviceName', o.displays.map((d) => opt(d.deviceName, d.label, s.monitorDeviceName || primary)).join('')))}
       ${row('Frame rate', '', select('fps', [30, 60, 120, 144].map((v) => opt(v, `${v} fps`, s.fps)).join('')))}
@@ -853,11 +856,11 @@ function renderSettings() {
     </div>
 
     <div class="settings-group" id="set-audio"><h2>Audio</h2>
-      ${row('Desktop audio', 'Game, music and app sound.',
+      ${row('Desktop audio', 'Game, music and app sound.' + meter('desktop'),
         select('desktopDevice', opt('off', 'Off', desktopValue) + opt('default', 'Follow Windows default output', desktopValue)
           + o.outputs.map((d) => opt(d.id, d.name, desktopValue)).join('')))}
       ${row('Desktop volume', 'Only affects clips.', range('desktopVolumePercent', 0, 200, 5, s.desktopVolumePercent, '%'))}
-      ${row('Microphone', 'Pick your real mic. Snappy sticks with it, even when Windows or other apps switch the default device.',
+      ${row('Microphone', 'Pick your real mic. Snappy sticks with it, even when Windows or other apps switch the default device.' + meter('mic'),
         select('micDevice', opt('off', 'Off', micValue) + opt('default', 'Follow Windows default mic', micValue)
           + o.microphones.map((d) => opt(d.id, d.name, micValue)).join('')))}
       ${row('Mic volume', 'Only affects clips. Your Windows mic level is never touched.', range('micVolumePercent', 0, 200, 5, s.micVolumePercent, '%'))}
@@ -910,10 +913,53 @@ function renderSettings() {
   scroller.scrollTop = top;
   if (refocus) { const el = $(refocus); el?.focus(); el?.select(); }
   renderSettingsNav();
+  showAdvice();
+  startMeters();
   snappy.call('storage.usage').then((bytes) => {
     const el = $('#storageUsage');
     if (el) el.textContent = `${fmtSize(bytes)} used`;
   }).catch(() => {});
+}
+
+// Hints about settings that are likely to cost frames on this PC. They sit under the row they are about.
+let adviceGen = 0;
+async function showAdvice() {
+  const gen = ++adviceGen;
+  let list;
+  try { list = await snappy.call('settings.advice'); } catch { return; }
+  if (gen !== adviceGen || state.view !== 'settings') return;
+  const general = [];
+  for (const a of list) {
+    const note = `<div class="advice ${a.level}">${icon(a.level === 'warn' ? 'warn' : 'bolt')}<span>${esc(a.text)}</span></div>`;
+    const row = a.setting && $(`#settingsForm [data-setting="${a.setting}"]`)?.closest('.row');
+    if (row) row.querySelector('.row-text').insertAdjacentHTML('beforeend', note);
+    else general.push(note);
+  }
+  const box = $('#adviceList');
+  if (box) box.innerHTML = general.join('');
+}
+
+// Live level bars for desktop audio and the mic, so you can check both before a round.
+let meterTimer = 0;
+const meterLevels = {};
+function startMeters() {
+  if (meterTimer) return;
+  meterTimer = setInterval(async () => {
+    if (state.view !== 'settings') { clearInterval(meterTimer); meterTimer = 0; return; }
+    const bars = document.querySelectorAll('#settingsForm [data-level]');
+    if (!bars.length || document.hidden) return;
+    let now;
+    try { now = await snappy.call('audio.levels'); } catch { return; }
+    for (const bar of bars) {
+      const key = bar.dataset.level, peak = now[key];
+      bar.classList.toggle('off', !(peak >= 0));
+      // On a decibel scale from -60 dB, so a quiet voice still moves it. Jumps up, falls back slowly.
+      const target = peak > 0 ? Math.max(0, 1 + Math.log10(peak) / 3) : 0;
+      const last = meterLevels[key] || 0;
+      meterLevels[key] = target > last ? target : last * 0.8 + target * 0.2;
+      bar.style.setProperty('--level', meterLevels[key].toFixed(3));
+    }
+  }, 90);
 }
 
 function updateRowHtml() {

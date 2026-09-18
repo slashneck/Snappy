@@ -8,7 +8,7 @@ namespace Snappy.Video;
 
 public static class FfmpegArgs
 {
-    public static readonly string[] AutoEncoderOrder = { "h264_nvenc", "h264_amf", "libx264" };
+    public static readonly string[] AutoEncoderOrder = { "h264_nvenc", "h264_amf", "h264_qsv", "libx264" };
     private static readonly ConcurrentDictionary<string, bool> ProbeCache = new();
 
     /// <summary>A way to record: which encoder, and whether frames can stay on the graphics card on the way there.</summary>
@@ -39,7 +39,9 @@ public static class FfmpegArgs
         var modes = new List<CaptureMode>();
         if (encoder != "libx264")
         {
-            if (VendorOf(encoder) == display.VendorId) modes.Add(new CaptureMode(encoder, true));
+            // Intel's encoder only gets copied frames: handing it textures needs a device mapping that isn't reliable
+            // across driver versions, and a copy on an integrated chip is cheap because it shares memory anyway.
+            if (VendorOf(encoder) == display.VendorId && !IsQsv(encoder)) modes.Add(new CaptureMode(encoder, true));
             modes.Add(new CaptureMode(encoder, false));
         }
         modes.Add(new CaptureMode("libx264", false));
@@ -48,7 +50,16 @@ public static class FfmpegArgs
 
     private static int VendorOf(string encoder) =>
         encoder.EndsWith("_nvenc", StringComparison.Ordinal) ? 0x10DE :
-        encoder.EndsWith("_amf", StringComparison.Ordinal) ? 0x1002 : -1;
+        encoder.EndsWith("_amf", StringComparison.Ordinal) ? 0x1002 :
+        IsQsv(encoder) ? 0x8086 : -1;
+
+    private static bool IsQsv(string encoder) => encoder.EndsWith("_qsv", StringComparison.Ordinal);
+
+    /// <summary>
+    /// Whether this way of recording keeps frames on the graphics card. Only then is FFmpeg's own CPU use small
+    /// enough to run it above normal priority; everything else has to share the processor fairly with the game.
+    /// </summary>
+    public static bool IsLight(CaptureMode mode, bool studio) => mode.OnGpu && !studio;
 
     public static bool Probe(string encoder) => ProbeCache.GetOrAdd(encoder, enc =>
     {
@@ -103,10 +114,14 @@ public static class FfmpegArgs
         {
             graph += "[frames]";
         }
-        // From memory, NVENC takes BGRA as is while AMF wants NV12.
-        graph += !onGpu && encoder.EndsWith("_amf", StringComparison.Ordinal) ? $";[{last}]format=nv12[v]" : $";[{last}]null[v]";
+        // From memory, NVENC takes BGRA as is while AMF and Quick Sync want NV12.
+        bool wantsNv12 = encoder.EndsWith("_amf", StringComparison.Ordinal) || IsQsv(encoder);
+        graph += !onGpu && wantsNv12 ? $";[{last}]format=nv12[v]" : $";[{last}]null[v]";
 
         var args = new List<string> { "-hide_banner", "-loglevel", "warning", "-nostdin" };
+        // Frames that go through memory get two filter threads. FFmpeg would otherwise start one per CPU core, and
+        // every one of them is a thread the game has to share its cores with.
+        if (!onGpu) args.AddRange(new[] { "-filter_complex_threads", "2" });
         if (studio != null) args.AddRange(studio.InputArgs);
         args.AddRange(new[]
         {
@@ -139,10 +154,20 @@ public static class FfmpegArgs
                 });
                 if (encoder == "h264_amf") args.AddRange(new[] { "-bf", "0" });
                 break;
-            default:
+            case "h264_qsv":
+            case "hevc_qsv":
                 args.AddRange(new[]
                 {
-                    "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency", "-pix_fmt", "yuv420p",
+                    "-c:v", encoder, "-preset", "veryfast",
+                    "-b:v", Mbps(b), "-maxrate", Mbps(b * 1.25), "-bufsize", Mbps(b * 2), "-g", gop, "-bf", "0",
+                });
+                break;
+            default:
+                // superfast rather than veryfast: about a third less CPU for slightly bigger files, which is the right
+                // trade on a PC that has no graphics card encoder and is running a game at the same time.
+                args.AddRange(new[]
+                {
+                    "-c:v", "libx264", "-preset", "superfast", "-tune", "zerolatency", "-pix_fmt", "yuv420p",
                     "-b:v", Mbps(b), "-maxrate", Mbps(b * 1.25), "-bufsize", Mbps(b * 2), "-bf", "0", "-g", gop,
                 });
                 break;
