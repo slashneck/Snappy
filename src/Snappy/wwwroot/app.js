@@ -863,7 +863,7 @@ function renderSettings() {
       ${row('Microphone', 'Pick your real mic. Snappy sticks with it, even when Windows or other apps switch the default device.' + meter('mic'),
         select('micDevice', opt('off', 'Off', micValue) + opt('default', 'Follow Windows default mic', micValue)
           + o.microphones.map((d) => opt(d.id, d.name, micValue)).join('')))}
-      ${row('Mic volume', 'Only affects clips. Your Windows mic level is never touched.', range('micVolumePercent', 0, 200, 5, s.micVolumePercent, '%'))}
+      ${row('Mic volume', 'Only affects clips. Your Windows mic level is never touched. The bar above shows the level your clips get.', range('micVolumePercent', 0, 400, 5, s.micVolumePercent, '%'))}
       ${row('Separate audio tracks', 'Adds desktop-only and mic-only tracks next to the mix, handy for editing.', toggle('separateAudioTracks', s.separateAudioTracks))}
       ${s.separateAudioTracks ? row('Split by program',
         o.programAudio

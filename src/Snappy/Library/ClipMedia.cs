@@ -68,7 +68,7 @@ public static partial class ClipMedia
         try { proc.PriorityClass = ProcessPriorityClass.BelowNormal; } catch { }
         _ = proc.StandardError.ReadToEndAsync();
 
-        int buckets = (int)Math.Clamp(duration * 40, 50, 4000);
+        int buckets = (int)Math.Clamp(duration * 200, 50, 24000); // fine enough to zoom in on a single word
         long totalSamples = Math.Max(1, (long)(duration * rate));
         var peaks = new float[buckets];
         var buf = new byte[1 << 16];

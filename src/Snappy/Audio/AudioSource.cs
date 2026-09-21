@@ -161,14 +161,20 @@ public sealed class AudioSource : IAudioTrackSource, IDisposable
             dev.Activate(ref iid, Wasapi.CLSCTX_ALL, IntPtr.Zero, out object clientObj);
             client = (IAudioClient)clientObj;
 
+            // A mic is kept as one channel, but many report two: USB mics copy the voice onto both, audio interfaces
+            // put it on the first input only. Letting Windows average those halves a one-sided mic, so the mic is read
+            // with its own channels and folded down here (see MonoFolder).
+            int deviceChannels = _loopback ? Channels : Math.Clamp(MixChannels(client), 1, 2);
+            int deviceBlock = deviceChannels * 2;
+            var fold = deviceChannels != Channels ? new MonoFolder() : null;
             var wfx = new WaveFormatEx
             {
                 wFormatTag = 1, // PCM
-                nChannels = (ushort)Channels,
+                nChannels = (ushort)deviceChannels,
                 nSamplesPerSec = SampleRate,
                 wBitsPerSample = 16,
-                nBlockAlign = (ushort)BlockAlign,
-                nAvgBytesPerSec = (uint)(SampleRate * BlockAlign),
+                nBlockAlign = (ushort)deviceBlock,
+                nAvgBytesPerSec = (uint)(SampleRate * deviceBlock),
                 cbSize = 0,
             };
             fmtPtr = Marshal.AllocHGlobal(Marshal.SizeOf<WaveFormatEx>());
@@ -185,9 +191,10 @@ public sealed class AudioSource : IAudioTrackSource, IDisposable
 
             State = AudioSourceState.Active;
             LastError = null;
-            Log.Info($"[{Name}] capturing from '{DeviceName}'");
+            Log.Info($"[{Name}] capturing from '{DeviceName}'{(fold != null ? " (two channels, folded to one)" : "")}");
 
             byte[] silence = new byte[SampleRate * BlockAlign];
+            byte[] folded = fold != null ? new byte[SampleRate * BlockAlign] : Array.Empty<byte>();
             long nextHousekeeping = Clock.NowHns();
             while (!_stop)
             {
@@ -210,6 +217,12 @@ public sealed class AudioSource : IAudioTrackSource, IDisposable
                         {
                             for (int off = 0; off < bytes; off += silence.Length)
                                 Ring.Append(silence.AsSpan(0, Math.Min(silence.Length, bytes - off)), (long)qpc, durHns, 0, 0);
+                        }
+                        else if (fold != null)
+                        {
+                            if (folded.Length < bytes) folded = new byte[bytes];
+                            fold.Fold(new ReadOnlySpan<short>((void*)data, (int)frames * deviceChannels), MemoryMarshal.Cast<byte, short>(folded.AsSpan(0, bytes)));
+                            Ring.Append(folded.AsSpan(0, bytes), (long)qpc, durHns, 0, 0);
                         }
                         else
                         {
@@ -243,6 +256,20 @@ public sealed class AudioSource : IAudioTrackSource, IDisposable
         }
     }
 
+    private static int MixChannels(IAudioClient client)
+    {
+        try
+        {
+            client.GetMixFormat(out IntPtr format);
+            try { return Marshal.PtrToStructure<WaveFormatEx>(format).nChannels; }
+            finally { Marshal.FreeCoTaskMem(format); }
+        }
+        catch
+        {
+            return 1;
+        }
+    }
+
     private static bool DefaultDeviceChanged(IMMDeviceEnumerator en, EDataFlow flow, string openedId)
     {
         try
@@ -262,5 +289,35 @@ public sealed class AudioSource : IAudioTrackSource, IDisposable
     {
         for (int waited = 0; waited < ms && !_stop; waited += 10)
             Thread.Sleep(Math.Min(10, ms - waited));
+    }
+}
+
+/// <summary>
+/// Turns a two channel mic into one without losing level: it always takes the channel that carries more sound.
+/// Averaging the two, which is what Windows does, halves a mic that sits on one input of an audio interface, and
+/// some mic arrays send the second channel flipped, so averaging cancels the voice almost completely.
+/// </summary>
+internal sealed class MonoFolder
+{
+    private double _left = 1e-9, _right = 1e-9;
+    private bool _useRight;
+
+    public void Fold(ReadOnlySpan<short> stereo, Span<short> mono)
+    {
+        int frames = mono.Length;
+        double l = 0, r = 0;
+        for (int i = 0; i < frames; i++)
+        {
+            double a = stereo[2 * i], b = stereo[2 * i + 1];
+            l += a * a;
+            r += b * b;
+        }
+        // Slow averages and a margin before switching, so the choice doesn't flip back and forth between words.
+        _left = _left * 0.97 + l / Math.Max(1, frames) * 0.03;
+        _right = _right * 0.97 + r / Math.Max(1, frames) * 0.03;
+        if (!_useRight && _right > _left * 1.5) _useRight = true;
+        else if (_useRight && _left > _right * 1.5) _useRight = false;
+        int offset = _useRight ? 1 : 0;
+        for (int i = 0; i < frames; i++) mono[i] = stereo[2 * i + offset];
     }
 }

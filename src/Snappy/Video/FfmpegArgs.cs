@@ -11,11 +11,22 @@ public static class FfmpegArgs
     public static readonly string[] AutoEncoderOrder = { "h264_nvenc", "h264_amf", "h264_qsv", "libx264" };
     private static readonly ConcurrentDictionary<string, bool> ProbeCache = new();
 
-    /// <summary>A way to record: which encoder, and whether frames can stay on the graphics card on the way there.</summary>
-    public sealed record CaptureMode(string Encoder, bool OnGpu)
+    /// <summary>
+    /// A way to record: how the screen is grabbed, which encoder compresses it, and whether frames can stay on the
+    /// graphics card on the way there.
+    /// </summary>
+    public sealed record CaptureMode(string Encoder, bool OnGpu, bool Wgc = false)
     {
-        public string Label => OnGpu || Encoder == "libx264" ? Encoder : $"{Encoder} with copied frames";
+        public string Label =>
+            (Wgc ? "Windows Graphics Capture, " : "Desktop Duplication, ") +
+            (OnGpu || Encoder == "libx264" ? Encoder : $"{Encoder} with copied frames");
     }
+
+    /// <summary>
+    /// Windows Graphics Capture stamps every frame with the moment it reached the screen, which makes clips
+    /// perfectly even. It only runs without a yellow frame around the screen on Windows 11.
+    /// </summary>
+    public static bool WgcAvailable { get; } = Environment.OSVersion.Version.Build >= 22000;
 
     /// <summary>
     /// Picks the requested encoder if this PC can run it, otherwise the best available one. The encoder of the graphics
@@ -36,15 +47,24 @@ public static class FfmpegArgs
     /// </summary>
     public static List<CaptureMode> CaptureModes(string encoder, DisplayInfo display)
     {
-        var modes = new List<CaptureMode>();
+        var ways = new List<CaptureMode>();
         if (encoder != "libx264")
         {
             // Intel's encoder only gets copied frames: handing it textures needs a device mapping that isn't reliable
             // across driver versions, and a copy on an integrated chip is cheap because it shares memory anyway.
-            if (VendorOf(encoder) == display.VendorId && !IsQsv(encoder)) modes.Add(new CaptureMode(encoder, true));
-            modes.Add(new CaptureMode(encoder, false));
+            if (VendorOf(encoder) == display.VendorId && !IsQsv(encoder)) ways.Add(new CaptureMode(encoder, true));
+            ways.Add(new CaptureMode(encoder, false));
         }
-        modes.Add(new CaptureMode("libx264", false));
+        ways.Add(new CaptureMode("libx264", false));
+
+        // Every way is tried with Windows Graphics Capture first, then with Desktop Duplication, which works everywhere.
+        if (!WgcAvailable) return ways;
+        var modes = new List<CaptureMode>();
+        foreach (var way in ways)
+        {
+            modes.Add(way with { Wgc = true });
+            modes.Add(way);
+        }
         return modes;
     }
 
@@ -56,10 +76,19 @@ public static class FfmpegArgs
     private static bool IsQsv(string encoder) => encoder.EndsWith("_qsv", StringComparison.Ordinal);
 
     /// <summary>
-    /// Whether this way of recording keeps frames on the graphics card. Only then is FFmpeg's own CPU use small
-    /// enough to run it above normal priority; everything else has to share the processor fairly with the game.
+    /// Whether this way of recording keeps frames on the graphics card all the way to the encoder. Only then is
+    /// FFmpeg's own CPU use small enough to run it above normal priority; everything else has to share the processor
+    /// fairly with the game. Studio layers are drawn in memory, and so is a lower resolution without Windows Graphics
+    /// Capture: FFmpeg's own graphics card scaler can't create its textures on many drivers.
     /// </summary>
-    public static bool IsLight(CaptureMode mode, bool studio) => mode.OnGpu && !studio;
+    public static bool FramesStayOnGpu(AppSettings s, DisplayInfo display, CaptureMode mode, bool studio) =>
+        mode.OnGpu && !studio && (mode.Wgc || !Downscales(s, display));
+
+    private static bool Downscales(AppSettings s, DisplayInfo display)
+    {
+        var (w, h) = OutputSize(s, display);
+        return w != display.Width || h != display.Height;
+    }
 
     public static bool Probe(string encoder) => ProbeCache.GetOrAdd(encoder, enc =>
     {
@@ -91,7 +120,8 @@ public static class FfmpegArgs
         return ((int)Math.Round(display.Width * (double)h / display.Height / 2) * 2, h);
     }
 
-    public static string BuildCapture(AppSettings s, DisplayInfo display, CaptureMode mode, StudioPipeline? studio = null)
+    public static string BuildCapture(AppSettings s, DisplayInfo display, CaptureMode mode, StudioPipeline? studio = null,
+        string output = "pipe:1")
     {
         string Mbps(double v) => v.ToString("0.#", CultureInfo.InvariantCulture) + "M";
         int fps = s.Fps;
@@ -99,11 +129,21 @@ public static class FfmpegArgs
 
         // Capture and scaling always happen on the monitor's graphics card. The frames then go straight to the encoder
         // as textures, or get copied to memory first: for another card's encoder, the CPU encoder, or Studio layers.
-        bool onGpu = mode.OnGpu && studio == null;
-        string graph = $"ddagrab=output_idx={display.OutputIndex}:framerate={fps}:draw_mouse={(s.CaptureCursor ? 1 : 0)}:dup_frames=1";
+        bool onGpu = FramesStayOnGpu(s, display, mode, studio != null);
         var (w, h) = OutputSize(s, display);
-        if (w != display.Width || h != display.Height) graph += $",scale_d3d11=width={w}:height={h}";
+        bool downscale = Downscales(s, display);
+        // The screen is grabbed as often as it changes, and the fps filter then picks, for every frame of the clip,
+        // the screen image that was showing at that exact moment. Grabbing at the clip's own rate instead lets the
+        // grabber's timing drift, which shows up as repeated and skipped frames.
+        int cursor = s.CaptureCursor ? 1 : 0;
+        string graph = mode.Wgc
+            ? $"gfxcapture=hmonitor={(ulong)Displays.MonitorHandle(display)}:max_framerate={Math.Max(240, fps * 2)}:capture_cursor={cursor}"
+            : $"ddagrab=output_idx={display.OutputIndex}:framerate={Math.Max(240, fps)}:draw_mouse={cursor}:dup_frames=0";
+        // Windows Graphics Capture scales on the graphics card while it grabs.
+        if (mode.Wgc && downscale) graph += $":width={w}:height={h}:resize_mode=scale_aspect:scale_mode=bicubic";
+        graph += $",fps={fps}";
         if (!onGpu) graph += ",hwdownload,format=bgra";
+        if (!mode.Wgc && downscale) graph += $",scale={w}:{h}:flags=bilinear";
         string last = "frames";
         if (studio != null)
         {
@@ -177,7 +217,7 @@ public static class FfmpegArgs
         {
             "-an", "-sn", "-dn",
             "-flush_packets", "1", "-muxdelay", "0", "-muxpreload", "0",
-            "-mpegts_flags", "+resend_headers", "-f", "mpegts", "pipe:1",
+            "-mpegts_flags", "+resend_headers", "-f", "mpegts", "-y", $"\"{output}\"",
         });
         return string.Join(' ', args);
     }

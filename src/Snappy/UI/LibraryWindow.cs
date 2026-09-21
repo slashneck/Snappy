@@ -427,8 +427,11 @@ public sealed class LibraryWindow : Form
             case "audio.levels":
                 return new
                 {
-                    desktop = _recorder.DesktopAudio is { State: AudioSourceState.Active } d ? d.RecentPeak() : -1,
-                    mic = _recorder.MicAudio is { State: AudioSourceState.Active } m ? m.RecentPeak() : -1,
+                    // After the volume sliders, so the bars show what ends up in the clip.
+                    desktop = _recorder.DesktopAudio is { State: AudioSourceState.Active } d
+                        ? Math.Min(1f, d.RecentPeak() * _recorder.Settings.DesktopVolumePercent / 100f) : -1,
+                    mic = _recorder.MicAudio is { State: AudioSourceState.Active } m
+                        ? Math.Min(1f, m.RecentPeak() * _recorder.Settings.MicVolumePercent / 100f) : -1,
                 };
             case "settings.save":
             {

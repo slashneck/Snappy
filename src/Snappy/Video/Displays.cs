@@ -95,6 +95,16 @@ public static unsafe class Displays
         return result;
     }
 
+    /// <summary>The monitor handle Windows Graphics Capture needs for this display.</summary>
+    public static IntPtr MonitorHandle(DisplayInfo display) =>
+        MonitorFromPoint(new Point { X = display.X + display.Width / 2, Y = display.Y + display.Height / 2 }, 2 /* nearest */);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Point { public int X, Y; }
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromPoint(Point point, uint flags);
+
     public static DisplayInfo? Resolve(string deviceName)
     {
         var all = Enumerate();

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using System.Text;
 using Snappy.Core;
@@ -36,7 +37,8 @@ public sealed class CaptureSession
 }
 
 /// <summary>
-/// Runs FFmpeg for the replay: ddagrab captures on the GPU, the hardware encoder compresses, and MPEG-TS comes back over a pipe into the RAM ring.
+/// Runs FFmpeg for the replay: Windows Graphics Capture (or Desktop Duplication) grabs the screen on the GPU, the hardware
+/// encoder compresses, and MPEG-TS comes back over a pipe into the RAM ring.
 /// If FFmpeg exits, stalls or the display setup changes, it is restarted automatically and the buffer survives.
 /// </summary>
 public sealed class VideoEngine : IDisposable
@@ -61,6 +63,7 @@ public sealed class VideoEngine : IDisposable
     private string _modesFor = "";
     private int _modeIndex, _modeFailures;
     private volatile bool _runGotFrames;
+    private readonly ScreenNudge _nudge;
 
     public RingArena Ring { get; }
     /// <summary>Set when FFmpeg kept failing with the Studio layers. Capture then carries on without them.</summary>
@@ -91,6 +94,7 @@ public sealed class VideoEngine : IDisposable
             bytes = ramLimit;
         }
         Ring = new RingArena(bytes);
+        _nudge = new ScreenNudge(() => Interlocked.Read(ref _lastDataHns));
         _supervisor = new Thread(Supervise) { IsBackground = true, Name = "video-supervisor" };
     }
 
@@ -124,6 +128,7 @@ public sealed class VideoEngine : IDisposable
         _wake.Set();
         KillProcess();
         if (_supervisor.IsAlive) _supervisor.Join(3000);
+        _nudge.Dispose();
         SetState(VideoEngineState.Stopped);
     }
 
@@ -225,13 +230,18 @@ public sealed class VideoEngine : IDisposable
         {
             Id = sessionId,
             // Frames that reach the encoder another way may be encoded slightly differently, so they never share a file.
-            CodecKey = $"{mode.Encoder}|{(mode.OnGpu && studio == null ? "gpu" : "memory")}|{Display.Width}x{Display.Height}|{_settings.OutputHeight}|{_settings.Fps}",
+            CodecKey = $"{mode.Encoder}|{(FfmpegArgs.FramesStayOnGpu(_settings, Display, mode, studio != null) ? "gpu" : "memory")}|{Display.Width}x{Display.Height}|{_settings.OutputHeight}|{_settings.Fps}",
             FrameDurationHns = Clock.HnsPerSecond / _settings.Fps,
         };
         current = session;
         lock (_sessionsGate) _sessions[session.Id] = session;
 
-        string arguments = FfmpegArgs.BuildCapture(_settings, Display, mode, studio);
+        // FFmpeg writes into a pipe with room for a few seconds of video. The default pipe holds 4 KB, so FFmpeg had to
+        // wait for Snappy every few kilobytes, and while it waited Windows dropped the screen frames arriving meanwhile.
+        string pipeName = $"snappy-video-{Environment.ProcessId}-{sessionId}";
+        using var pipe = new NamedPipeServerStream(pipeName, PipeDirection.In, 1, PipeTransmissionMode.Byte,
+            PipeOptions.None, 8 << 20, 0);
+        string arguments = FfmpegArgs.BuildCapture(_settings, Display, mode, studio, @"\\.\pipe\" + pipeName);
 #if DEBUG
         // Development only: SNAPPY_BREAK_CAPTURE=n makes the first n ways of recording fail, to test the fallback.
         if (int.TryParse(Environment.GetEnvironmentVariable("SNAPPY_BREAK_CAPTURE"), out int broken) && _modeIndex < broken)
@@ -241,7 +251,6 @@ public sealed class VideoEngine : IDisposable
         {
             UseShellExecute = false,
             CreateNoWindow = true,
-            RedirectStandardOutput = true,
             RedirectStandardError = true,
             RedirectStandardInput = true,
         };
@@ -253,7 +262,7 @@ public sealed class VideoEngine : IDisposable
         ChildProcessJob.Attach(proc);
         // Above normal only while FFmpeg just passes textures along. When it copies frames or encodes on the CPU it
         // does real work, and above normal would take that time straight from the game.
-        var priority = FfmpegArgs.IsLight(mode, studio != null) ? ProcessPriorityClass.AboveNormal
+        var priority = FfmpegArgs.FramesStayOnGpu(_settings, Display, mode, studio != null) ? ProcessPriorityClass.AboveNormal
             : mode.Encoder == "libx264" ? ProcessPriorityClass.BelowNormal : ProcessPriorityClass.Normal;
         try { proc.PriorityClass = priority; } catch { }
 
@@ -279,12 +288,40 @@ public sealed class VideoEngine : IDisposable
 
         Interlocked.Exchange(ref _lastDataHns, Clock.NowHns());
         using var watchdog = new System.Threading.Timer(_ => Watchdog(proc), null, 1000, 1000);
+        _nudge.Display = Display;
+#if DEBUG
+        if (Environment.GetEnvironmentVariable("SNAPPY_NO_NUDGE") == "1") _nudge.Display = null;
+#endif
+        // Reading promptly keeps FFmpeg from ever waiting on a full pipe, which would hold up the next frame.
+        Thread.CurrentThread.Priority = ThreadPriority.AboveNormal;
 
-        var stdout = proc.StandardOutput.BaseStream;
+        var connecting = pipe.WaitForConnectionAsync();
+        while (!connecting.Wait(100))
+        {
+            if (proc.HasExited || _stop || _restartRequested) break;
+        }
+        if (!pipe.IsConnected)
+        {
+            try { if (!proc.HasExited) proc.Kill(true); } catch { }
+            proc.WaitForExit(2000);
+            _nudge.Display = null;
+            Thread.CurrentThread.Priority = ThreadPriority.Normal;
+            _proc = null;
+            string why;
+            lock (_stderrTail) why = string.Join(" | ", _stderrTail);
+            if (!_stop && !_restartRequested)
+            {
+                LastError = why.Length > 0 ? why : $"ffmpeg exited with code {(proc.HasExited ? proc.ExitCode : -1)}";
+                Log.Warn($"Capture session {session.Id} ended before sending video: {LastError}");
+            }
+            return;
+        }
+
+        var stdout = pipe;
         var buf = new byte[1 << 16];
         long nextEvict = 0;
         int n;
-        while ((n = stdout.Read(buf, 0, buf.Length)) > 0)
+        while ((n = ReadSome(stdout, buf)) > 0)
         {
             long now = Clock.NowHns();
             Interlocked.Exchange(ref _lastDataHns, now);
@@ -300,6 +337,8 @@ public sealed class VideoEngine : IDisposable
             }
         }
 
+        _nudge.Display = null;
+        Thread.CurrentThread.Priority = ThreadPriority.Normal;
         proc.WaitForExit(2000);
         _proc = null;
         string tail;
@@ -311,9 +350,18 @@ public sealed class VideoEngine : IDisposable
         }
     }
 
+    /// <summary>A pipe that breaks because FFmpeg was stopped simply ends the read.</summary>
+    private static int ReadSome(Stream s, byte[] buffer)
+    {
+        try { return s.Read(buffer, 0, buffer.Length); }
+        catch (IOException) { return 0; }
+        catch (ObjectDisposedException) { return 0; }
+    }
+
     private void Watchdog(Process proc)
     {
         long silentFor = Clock.NowHns() - Interlocked.Read(ref _lastDataHns);
+        // A still screen is kept moving by the nudge, so six silent seconds mean FFmpeg itself is stuck.
         if (silentFor > Clock.SecondsToHns(6) && !proc.HasExited)
         {
             Log.Warn("Capture stalled (no frames for 6s), restarting ffmpeg");

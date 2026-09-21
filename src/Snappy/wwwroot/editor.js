@@ -8,8 +8,9 @@ const Editor = (() => {
   const ed = {
     clip: null, info: null, tab: 'trim',
     lanes: [], lanesLoaded: false, laneSource: false,
-    crop: null, aspect: 'free',
+    crop: null, aspect: 'free', cropApplied: false,
     selectedRegion: null,
+    view: null, // the part of the clip the audio tracks show, { start, end } in seconds, null = all of it
   };
   let actx = null, videoGain = null;
   const stage = $('#stage');
@@ -35,7 +36,10 @@ const Editor = (() => {
     if (videoGain) videoGain.gain.value = 1;
     ed.crop = null;
     ed.aspect = 'free';
+    ed.cropApplied = false;
+    showCropped();
     ed.selectedRegion = null;
+    ed.view = null;
     ed.clip = null;
     ed.info = null;
     $('#editLanes').innerHTML = '';
@@ -51,7 +55,7 @@ const Editor = (() => {
     $$('.edit-pane').forEach((p) => { p.hidden = p.dataset.pane !== tab; });
     $('#editPanel').hidden = tab === 'trim';
     $('#editLanes').hidden = tab !== 'audio';
-    $('#cropLayer').hidden = tab !== 'crop' || !!document.fullscreenElement;
+    $('#cropLayer').hidden = tab !== 'crop' || !!document.fullscreenElement || ed.cropApplied;
     if (tab === 'audio') openAudio();
     if (tab === 'crop') openCrop();
     layoutLayers();
@@ -79,6 +83,7 @@ const Editor = (() => {
     layer.style.left = `${r.left}px`; layer.style.top = `${r.top}px`;
     layer.style.width = `${r.width}px`; layer.style.height = `${r.height}px`;
     if (ed.tab === 'crop') renderCropBox();
+    if (ed.cropApplied) showCropped();
     for (const lane of ed.lanes) drawWaveform(lane);
   }
 
@@ -148,6 +153,38 @@ const Editor = (() => {
     }
   }
 
+  // The tracks can be zoomed: scroll to zoom in around the pointer, Shift + scroll (or a sideways scroll) to move.
+  const viewStart = () => ed.view?.start ?? 0;
+  const viewEnd = () => ed.view?.end ?? dur();
+  const vpct = (t) => { const s = viewStart(), e = viewEnd(); return e > s ? ((t - s) / (e - s)) * 100 : 0; };
+
+  function setView(start, end) {
+    const d = dur();
+    if (!d) return;
+    const span = clamp(end - start, Math.min(d, 0.4), d);
+    start = clamp(start, 0, d - span);
+    ed.view = span >= d - 0.001 ? null : { start, end: start + span };
+    for (const lane of ed.lanes) { renderRegions(lane); drawWaveform(lane); }
+    renderAudioPane();
+  }
+
+  function zoomLanes(e) {
+    if (ed.tab !== 'audio' || !ed.lanes.length || !dur()) return;
+    e.preventDefault();
+    const body = e.target.closest('.lane-body') || $('#editLanes .lane-body');
+    const r = body.getBoundingClientRect();
+    const s = viewStart(), span = viewEnd() - s;
+    if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+      const delta = ((e.shiftKey ? e.deltaY : e.deltaX) / r.width) * span;
+      setView(s + delta, s + delta + span);
+      return;
+    }
+    const at = s + clamp((e.clientX - r.left) / r.width, 0, 1) * span;
+    const next = span * Math.pow(1.0015, e.deltaY);
+    const frac = (at - s) / span;
+    setView(at - frac * next, at - frac * next + next);
+  }
+
   function renderLanes() {
     $('#editLanes').innerHTML = ed.lanes.map((lane, i) => `
       <div class="lane${lane.muted ? ' muted' : ''}" data-lane="${i}">
@@ -170,7 +207,11 @@ const Editor = (() => {
         <input type="range" min="0" max="200" step="5" value="${Math.round(lane.volume * 100)}" data-lane-volume="${i}" style="--fill:${lane.volume * 50}%">
         <span class="value">${Math.round(lane.volume * 100)}%</span></div>
       <div class="divider"></div>`).join('')
-      + '<span class="hint">Drag across a track to mute that moment</span><div class="spacer"></div>'
+      + (ed.view
+        ? `<span class="hint">Showing ${fmtTime(viewStart())} to ${fmtTime(viewEnd())}. Shift + scroll moves along</span>`
+          + '<button class="link-btn" data-zoom-fit>Show all</button>'
+        : '<span class="hint">Drag across a track to mute that moment. Scroll over the tracks to zoom in</span>')
+      + '<div class="spacer"></div>'
       + (audioEdited() ? '<button class="link-btn" data-audio-reset>Reset audio</button>' : '');
   }
 
@@ -189,10 +230,18 @@ const Editor = (() => {
       ctx.fillRect(0, canvas.height / 2 - dpr / 2, canvas.width, dpr);
       return;
     }
-    const n = lane.peaks.length, mid = canvas.height / 2, bar = Math.max(1, Math.floor(canvas.width / n));
+    // Every column shows the loudest moment in the stretch of time it covers, so short sounds never fall between.
+    const n = lane.peaks.length, mid = canvas.height / 2, d = dur() || 1;
+    const perBucket = d / n, s = viewStart(), span = viewEnd() - s;
+    const pxPerBucket = canvas.width / (span / perBucket);
+    const gap = pxPerBucket > 3 ? 1 : 0;
+    const bar = Math.max(1, Math.floor(pxPerBucket) - gap);
     ctx.fillStyle = 'rgba(244,244,244,0.6)';
-    for (let x = 0; x < canvas.width; x += bar + (bar > 2 ? 1 : 0)) {
-      const p = lane.peaks[Math.min(n - 1, Math.floor((x / canvas.width) * n))];
+    for (let x = 0; x < canvas.width; x += bar + gap) {
+      const t0 = s + (x / canvas.width) * span, t1 = s + ((x + bar + gap) / canvas.width) * span;
+      let p = 0;
+      const last = Math.min(n - 1, Math.ceil(t1 / perBucket) - 1);
+      for (let i = Math.floor(t0 / perBucket); i <= Math.max(last, Math.floor(t0 / perBucket)); i++) p = Math.max(p, lane.peaks[i] || 0);
       const h = Math.max(dpr, Math.pow(p, 0.7) * (canvas.height - 6 * dpr));
       ctx.fillRect(x, mid - h / 2, bar, h);
     }
@@ -203,7 +252,7 @@ const Editor = (() => {
     if (!host) return;
     host.innerHTML = lane.mutes.map((m, j) => {
       const sel = ed.selectedRegion && ed.selectedRegion.lane === lane && ed.selectedRegion.index === j;
-      return `<div class="mute-region${sel ? ' selected' : ''}" data-region="${j}" style="left:${pct(m.start)}%;width:${pct(m.end) - pct(m.start)}%" title="Muted from ${fmtTime(m.start)} to ${fmtTime(m.end)}">
+      return `<div class="mute-region${sel ? ' selected' : ''}" data-region="${j}" style="left:${vpct(m.start)}%;width:${vpct(m.end) - vpct(m.start)}%" title="Muted from ${fmtTime(m.start)} to ${fmtTime(m.end)}">
         <span class="edge l" data-edge="start"></span><span class="edge r" data-edge="end"></span><span class="region-del" data-region-del="${j}">×</span></div>`;
     }).join('');
   }
@@ -225,7 +274,7 @@ const Editor = (() => {
 
   function laneTime(lane, clientX) {
     const r = lane.el.querySelector('.lane-body').getBoundingClientRect();
-    return clamp((clientX - r.left) / r.width, 0, 1) * dur();
+    return viewStart() + clamp((clientX - r.left) / r.width, 0, 1) * (viewEnd() - viewStart());
   }
 
   function audioChanged(lane) {
@@ -307,7 +356,10 @@ const Editor = (() => {
       renderTabs();
     });
     pane.addEventListener('change', () => renderAudioPane());
+    host.addEventListener('wheel', zoomLanes, { passive: false });
+    host.addEventListener('dblclick', (e) => { if (!e.target.closest('[data-region]')) setView(0, dur()); });
     pane.addEventListener('click', (e) => {
+      if (e.target.closest('[data-zoom-fit]')) { setView(0, dur()); return; }
       if (!e.target.closest('[data-audio-reset]')) return;
       ed.lanes.forEach((l) => { l.volume = 1; l.muted = false; l.mutes = []; });
       ed.selectedRegion = null;
@@ -344,9 +396,17 @@ const Editor = (() => {
       if (!video.paused) syncLanes(false);
     }
     if (ed.tab === 'audio') {
+      // While playing, a zoomed view turns the page when the playhead reaches its edge.
+      if (ed.view && !video.paused && (t > ed.view.end || t < ed.view.start)) {
+        const span = ed.view.end - ed.view.start;
+        setView(t - span * 0.1, t + span * 0.9);
+      }
+      const x = vpct(t);
       for (const lane of ed.lanes) {
         const ph = lane.el?.querySelector('.lane-playhead');
-        if (ph) ph.style.left = `${pct(t)}%`;
+        if (!ph) continue;
+        ph.style.left = `${x}%`;
+        ph.hidden = x < 0 || x > 100;
       }
     }
   }
@@ -359,7 +419,7 @@ const Editor = (() => {
     video.addEventListener('loadedmetadata', layoutLayers);
     window.addEventListener('resize', layoutLayers);
     document.addEventListener('fullscreenchange', () => {
-      $('#cropLayer').hidden = ed.tab !== 'crop' || !!document.fullscreenElement;
+      $('#cropLayer').hidden = ed.tab !== 'crop' || !!document.fullscreenElement || ed.cropApplied;
       setTimeout(layoutLayers, 50);
     });
   }
@@ -379,11 +439,46 @@ const Editor = (() => {
   }
 
   function renderCropPane() {
+    if (ed.cropApplied) {
+      $('#cropPane').innerHTML = `
+        <span class="hint">Showing the cropped picture (${sizeText(currentCrop())}). Nothing changes on disk until you replace the clip or save it as a new one.</span>
+        <div class="spacer"></div>
+        <button class="btn ghost sm" data-crop-edit>Edit crop</button>
+        <button class="link-btn" data-crop-reset>Reset crop</button>`;
+      return;
+    }
     $('#cropPane').innerHTML = `
       <div class="segmented" id="aspectPicker">${Object.keys(ASPECTS).map((a) => `<button data-aspect="${a}" class="${ed.aspect === a ? 'active' : ''}">${a === 'free' ? 'Free' : a}</button>`).join('')}</div>
       <span class="hint">${sizeText(currentCrop())}</span>
       <div class="spacer"></div>
-      ${ed.crop ? '<button class="link-btn" data-crop-reset>Reset crop</button>' : ''}`;
+      ${ed.crop ? '<button class="link-btn" data-crop-reset>Reset crop</button><button class="btn sm" data-crop-apply>Apply crop</button>' : ''}`;
+  }
+
+  // An applied crop shows in the player right away: the video is scaled so the cropped part fills the player, and
+  // everything around it is clipped away. The file only changes once the clip is replaced or saved as a new one.
+  function showCropped() {
+    const c = ed.cropApplied ? ed.crop : null;
+    if (c && video.videoWidth) {
+      const r = videoRect(), s = stage.getBoundingClientRect();
+      const x = r.left + c.x * r.scale, y = r.top + c.y * r.scale, w = c.w * r.scale, h = c.h * r.scale;
+      const k = Math.min(s.width / w, s.height / h);
+      video.style.transformOrigin = '0 0';
+      video.style.transform = `translate(${(s.width - w * k) / 2 - x * k}px, ${(s.height - h * k) / 2 - y * k}px) scale(${k})`;
+      video.style.clipPath = `inset(${y}px ${s.width - x - w}px ${s.height - y - h}px ${x}px)`;
+    } else {
+      video.style.transform = '';
+      video.style.transformOrigin = '';
+      video.style.clipPath = '';
+    }
+    $('#cropLayer').hidden = ed.tab !== 'crop' || !!document.fullscreenElement || ed.cropApplied;
+  }
+
+  function setCropApplied(on) {
+    ed.cropApplied = on && !!ed.crop;
+    showCropped();
+    renderCropPane();
+    if (!ed.cropApplied) renderCropBox();
+    renderTabs();
   }
 
   function renderCropBox() {
@@ -462,12 +557,12 @@ const Editor = (() => {
     $('#cropPane').addEventListener('click', (e) => {
       const a = e.target.closest('[data-aspect]');
       if (a) { setAspect(a.dataset.aspect); return; }
+      if (e.target.closest('[data-crop-apply]')) { setCropApplied(true); return; }
+      if (e.target.closest('[data-crop-edit]')) { setCropApplied(false); return; }
       if (e.target.closest('[data-crop-reset]')) {
         ed.crop = null;
         ed.aspect = 'free';
-        renderCropPane();
-        renderCropBox();
-        renderTabs();
+        setCropApplied(false);
       }
     });
   }

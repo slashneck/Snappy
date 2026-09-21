@@ -296,7 +296,10 @@ public static class ClipWriter
             a.Add(t.Path);
             string tag = $"a{++input}";
             string chain = $"[{input}:a]volume={Vol(t.VolumePercent)}";
-            if (t.Mono) chain += ",aformat=channel_layouts=stereo";
+            // The same voice on both sides, at full level (aformat's upmix would take 3 dB off), and never clipped when
+            // the mic is turned up.
+            if (t.Mono) chain += ",pan=stereo|c0=c0|c1=c0";
+            if (t.Mono && t.VolumePercent > 100) chain += ",alimiter=limit=0.97:latency=1";
             if (feedsMix && ownTrack)
             {
                 filters.Add($"{chain},asplit=2[{tag}m][{tag}s]");

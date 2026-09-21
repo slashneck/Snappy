@@ -46,6 +46,10 @@ public static class PerformanceAdvisor
             list.Add(new("outputHeight", "info",
                 "4K at 60 fps is heavy on any PC. 1440p or 1080p looks nearly the same on Discord and YouTube."));
 
+        if (!FfmpegArgs.WgcAvailable && display != null && (w != display.Width || h != display.Height))
+            list.Add(new("outputHeight", "info",
+                "On Windows 10 a lower resolution is scaled by the processor, which costs more than it saves. Native is lighter here."));
+
         if (s.BitrateMbps > 60)
             list.Add(new("bitrateMbps", "info", "Above 60 Mbps clips grow quickly without looking better."));
 

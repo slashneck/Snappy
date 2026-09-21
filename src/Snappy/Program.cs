@@ -20,6 +20,8 @@ internal static class Program
             ApplicationConfiguration.Initialize();
             return Installation.Uninstall();
         }
+        // Snappy runs next to games all day: never stop every thread for a full garbage collection while it does.
+        System.Runtime.GCSettings.LatencyMode = System.Runtime.GCLatencyMode.SustainedLowLatency;
 #if DEBUG
         if (args.Length > 1 && args[0] == "--test-overlay")
             return SelfTest.RenderOverlays(args[1]);
