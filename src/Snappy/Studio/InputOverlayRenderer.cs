@@ -257,12 +257,12 @@ public sealed class InputOverlayRenderer : IDisposable
     // ---------- drawing ----------
 
     /// <summary>Renders one frame and copies it (BGRA, top down) into <paramref name="destination"/>.</summary>
-    public void Render(InputState state, GamepadState? pad, byte[] destination)
+    public bool Render(InputState state, GamepadState? pad, byte[] destination)
     {
         // Most frames look exactly like the one before (nothing pressed, mouse still), so only draw when that changes.
         // The recording hands in the same buffer every frame, so the last drawing is still sitting in it.
         int look = Look(state, pad);
-        if (look == _drawnLook && ReferenceEquals(destination, _drawnInto)) return;
+        if (look == _drawnLook && ReferenceEquals(destination, _drawnInto)) return false;
         _drawnLook = look;
         _drawnInto = destination;
         Draw(state, pad);
@@ -270,6 +270,7 @@ public sealed class InputOverlayRenderer : IDisposable
         var data = _bitmap.LockBits(new Rectangle(0, 0, Width, Height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
         try { Marshal.Copy(data.Scan0, destination, 0, Width * Height * 4); }
         finally { _bitmap.UnlockBits(data); }
+        return true;
     }
 
     private int _drawnLook;

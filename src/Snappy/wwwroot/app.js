@@ -190,6 +190,91 @@ function setLibrary(lib) {
   if (state.view === 'library') renderGrid();
 }
 
+// ---------- importing clips from other apps ----------
+const IMPORT_SOURCES = ['NVIDIA', 'Medal', 'AMD ReLive', 'Xbox Game Bar', 'OBS', 'Outplayed', 'Steam', 'Other app'];
+const importState = { scan: null, running: false };
+
+function importDialog(html) {
+  $('#importBody').innerHTML = html;
+  $('#importDialog').hidden = false;
+}
+
+async function startImport() {
+  if (importState.running) { $('#importDialog').hidden = false; return; }
+  let folder;
+  try { folder = await snappy.call('import.pickFolder'); } catch (err) { toast({ kind: 'error', title: 'Couldn’t open the folder picker', sub: err.message }); return; }
+  if (!folder) return;
+  importDialog(`<h3>Import clips</h3><p>Looking through ${esc(folder)}…</p>`);
+  let scan;
+  try { scan = await snappy.call('import.scan', { folder }); }
+  catch (err) { $('#importDialog').hidden = true; toast({ kind: 'error', title: 'Couldn’t read that folder', sub: err.message }); return; }
+  importState.scan = scan;
+  if (!scan.count) {
+    importDialog(`<h3>No clips found</h3><p>There are no videos in ${esc(folder)} or the folders inside it.</p>
+      <div class="modal-actions"><button class="btn" data-import="close">OK</button></div>`);
+    return;
+  }
+  renderImportChoice(false);
+}
+
+function renderImportChoice(move) {
+  const s = importState.scan;
+  const games = s.games.slice(0, 8).map((g) => `<span class="import-game">${esc(g)}</span>`).join('')
+    + (s.games.length > 8 ? `<span class="import-game more">+${s.games.length - 8} more</span>` : '');
+  const tight = !move && s.bytes > s.freeBytes - 512 * 1048576;
+  importDialog(`
+    <h3>Import ${s.count} clip${s.count === 1 ? '' : 's'}</h3>
+    <p class="import-where" title="${esc(s.folder)}">${fmtSize(s.bytes)} from ${esc(s.folder)}</p>
+    <label class="import-row"><span>Made with</span>
+      <select class="select" id="importSource">${IMPORT_SOURCES.map((x) => `<option${x === s.source ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select></label>
+    <div class="import-row stack"><span>Sorted into folders by game</span><div class="import-games">${games}</div></div>
+    <div class="import-options">
+      <label class="import-option${move ? '' : ' on'}"><input type="radio" name="importMode" value="copy"${move ? '' : ' checked'}>
+        <span><b>Copy</b><small>The originals stay where they are. Needs ${fmtSize(s.bytes)} of free space.</small></span></label>
+      <label class="import-option${move ? ' on' : ''}"><input type="radio" name="importMode" value="move"${move ? ' checked' : ''}>
+        <span><b>Move</b><small>Saves the space. ${s.sameDrive ? 'Instant, they’re on the same drive.' : 'Each clip is copied first and only then removed from the old folder.'} The other app won’t find them anymore.</small></span></label>
+    </div>
+    ${tight ? `<p class="import-warn">Only ${fmtSize(s.freeBytes)} is free where your clips are. Moving saves the space, or free some up first.</p>` : ''}
+    <div class="modal-actions"><button class="btn ghost" data-import="close">Cancel</button><button class="btn" data-import="go"${tight ? ' disabled' : ''}>Import</button></div>`);
+}
+
+async function runImport() {
+  const s = importState.scan;
+  const move = $('#importBody input[name="importMode"]:checked')?.value === 'move';
+  const source = $('#importSource')?.value || s.source;
+  importState.running = true;
+  importState.source = source;
+  importDialog(`<h3>Importing from ${esc(source)}</h3>
+    <p id="importNow">Starting…</p>
+    <div class="import-bar"><i id="importFill"></i></div>
+    <div class="modal-actions"><button class="btn ghost" data-import="hide">Hide</button><button class="btn ghost" data-import="stop">Stop</button></div>`);
+  Mascot.hold('import', 'working');
+  try { await snappy.call('import.start', { folder: s.folder, source, move }); }
+  catch (err) { finishImport({ imported: 0, skipped: 0, failed: 0, error: err.message }); }
+}
+
+function finishImport(r) {
+  importState.running = false;
+  Mascot.release('import');
+  $('#importDialog').hidden = true;
+  refreshLibrary();
+  if (r.error) { toast({ kind: 'error', title: 'Import didn’t finish', sub: r.error, timeout: 9000 }); return; }
+  const extra = [r.skipped ? `${r.skipped} were already here` : '', r.failed ? `${r.failed} couldn’t be read (see the log)` : ''].filter(Boolean).join(', ');
+  toast({
+    kind: r.failed ? 'error' : 'success',
+    title: r.cancelled ? `Stopped after ${r.imported} clip${r.imported === 1 ? '' : 's'}` : `Imported ${r.imported} clip${r.imported === 1 ? '' : 's'} from ${importState.source}`,
+    sub: extra,
+  });
+  if (r.imported && !r.cancelled) Mascot.flash('happy');
+}
+
+snappy.on('importProgress', (p) => {
+  const now = $('#importNow'), fill = $('#importFill');
+  if (now) now.textContent = p.total ? `${Math.min(p.done + 1, p.total)} of ${p.total}${p.current ? ` · ${p.current}` : ''}` : 'Starting…';
+  if (fill) fill.style.width = `${p.total ? (p.done / p.total) * 100 : 0}%`;
+});
+snappy.on('importDone', finishImport);
+
 async function refreshLibrary() {
   try { setLibrary(await snappy.call('library.scan')); }
   catch (err) { console.error(err); }
@@ -247,7 +332,7 @@ function cardHtml(c) {
     <div class="card-body">
       <div class="card-text">
         <div class="card-title" title="${esc(c.title)}">${esc(c.title)}</div>
-        <div class="card-meta">${esc(fmtWhen(c.date))} · ${fmtSize(c.size)}</div>
+        <div class="card-meta">${esc(fmtWhen(c.date))} · ${fmtSize(c.size)}${c.source ? ` · <span class="card-source" title="Imported from ${esc(c.source)}">${esc(c.source)}</span>` : ''}</div>
       </div>
       <button class="card-more" data-action="more" title="More">${icon('more')}</button>
     </div>
@@ -1160,6 +1245,16 @@ function bind() {
   $('#searchInput').addEventListener('input', debounce((e) => { state.search = e.target.value; renderGrid(); }, 120));
   $('#sortSelect').addEventListener('change', (e) => { state.sort = e.target.value; renderGrid(); });
   $('#selectModeBtn').addEventListener('click', () => setSelecting(true));
+  $('#importBtn').addEventListener('click', startImport);
+  $('#importDialog').addEventListener('change', (e) => {
+    if (e.target.name === 'importMode') renderImportChoice(e.target.value === 'move');
+  });
+  $('#importDialog').addEventListener('click', (e) => {
+    const act = e.target.closest('[data-import]')?.dataset.import;
+    if (act === 'go') runImport();
+    else if (act === 'stop') { snappy.call('import.cancel').catch(() => {}); $('#importNow').textContent = 'Stopping after this clip…'; }
+    else if (act === 'close' || act === 'hide' || (e.target.id === 'importDialog' && !importState.running)) $('#importDialog').hidden = true;
+  });
   $('#cancelSelectBtn').addEventListener('click', () => setSelecting(false));
   $('#selectAllBtn').addEventListener('click', () => { visibleClips().forEach((c) => state.selected.add(c.id)); renderGrid(); });
   $('#bulkMoveBtn').addEventListener('click', (e) => {

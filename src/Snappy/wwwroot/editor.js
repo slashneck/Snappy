@@ -165,7 +165,45 @@ const Editor = (() => {
     start = clamp(start, 0, d - span);
     ed.view = span >= d - 0.001 ? null : { start, end: start + span };
     for (const lane of ed.lanes) { renderRegions(lane); drawWaveform(lane); }
+    renderScrollbar();
     renderAudioPane();
+  }
+
+  // A thin bar under the tracks shows which part of the clip is in view; drag it to move along.
+  function renderScrollbar() {
+    const bar = $('#editLanes .lane-scroll');
+    if (!bar) return;
+    const d = dur();
+    bar.hidden = !ed.view || !d;
+    if (bar.hidden) return;
+    const thumb = bar.firstElementChild;
+    thumb.style.left = `${(ed.view.start / d) * 100}%`;
+    thumb.style.width = `${((ed.view.end - ed.view.start) / d) * 100}%`;
+  }
+
+  function bindScrollbar() {
+    const host = $('#editLanes');
+    host.addEventListener('pointerdown', (e) => {
+      const bar = e.target.closest('.lane-scroll');
+      if (!bar || !ed.view || e.button !== 0) return;
+      e.stopPropagation();
+      const r = bar.getBoundingClientRect(), d = dur(), span = ed.view.end - ed.view.start;
+      if (!e.target.closest('.lane-scroll-thumb')) {
+        // A click beside the thumb jumps there, centred on the click.
+        const at = ((e.clientX - r.left) / r.width) * d;
+        setView(at - span / 2, at + span / 2);
+      }
+      const from = ed.view?.start ?? 0, x0 = e.clientX;
+      try { bar.setPointerCapture(e.pointerId); } catch { /* synthetic pointer */ }
+      const move = (ev) => {
+        const start = from + ((ev.clientX - x0) / r.width) * d;
+        setView(start, start + span);
+      };
+      const up = () => { bar.removeEventListener('pointermove', move); bar.removeEventListener('pointerup', up); bar.removeEventListener('pointercancel', up); };
+      bar.addEventListener('pointermove', move);
+      bar.addEventListener('pointerup', up);
+      bar.addEventListener('pointercancel', up);
+    }, true);
   }
 
   function zoomLanes(e) {
@@ -174,8 +212,8 @@ const Editor = (() => {
     const body = e.target.closest('.lane-body') || $('#editLanes .lane-body');
     const r = body.getBoundingClientRect();
     const s = viewStart(), span = viewEnd() - s;
-    if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
-      const delta = ((e.shiftKey ? e.deltaY : e.deltaX) / r.width) * span;
+    if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY) || e.target.closest('.lane-scroll')) {
+      const delta = ((Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY) / r.width) * span;
       setView(s + delta, s + delta + span);
       return;
     }
@@ -197,8 +235,9 @@ const Editor = (() => {
           <div class="lane-regions"></div>
           <div class="lane-playhead"></div>
         </div>
-      </div>`).join('');
+      </div>`).join('') + '<div class="lane-scroll" hidden title="Drag to move along the clip"><div class="lane-scroll-thumb"></div></div>';
     ed.lanes.forEach((lane, i) => { lane.el = $(`[data-lane="${i}"]`); renderRegions(lane); drawWaveform(lane); });
+    renderScrollbar();
   }
 
   function renderAudioPane() {
@@ -682,6 +721,7 @@ const Editor = (() => {
   });
   bindLanes();
   bindCrop();
+  bindScrollbar();
   bindVideo();
   requestAnimationFrame(tick);
 

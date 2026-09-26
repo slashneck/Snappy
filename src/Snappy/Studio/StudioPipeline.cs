@@ -53,33 +53,38 @@ public sealed class StudioPipeline : IDisposable
             int x = (int)Math.Round(layer.X * outW), y = (int)Math.Round(layer.Y * outH);
             int w = (int)Math.Round(layer.W * outW), h = (int)Math.Round(layer.H * outH);
             if (w < 2 || h < 2) continue;
+            // A turned layer needs a bigger canvas, centred where the box is.
+            var (cw, ch) = LayerDraw.RotatedSize(w, h, layer.Rotation);
+            int ox = x + (w - cw) / 2, oy = y + (h - ch) / 2;
 
             if (layer.Type == "image")
             {
                 string png = Path.Combine(CacheDir, $"{layer.Id}-{w}x{h}.png");
-                RenderStill(Path.Combine(StudioSetup.MediaDir, layer.File), w, h, layer.Opacity, layer.Fit == "fit", png);
+                RenderStill(layer, Path.Combine(StudioSetup.MediaDir, layer.File), w, h, png);
                 InputArgs.AddRange(new[] { "-i", Quote(png) });
             }
             else
             {
                 ILayerSource? source = layer.Type switch
                 {
-                    "gif" => new GifSource(Path.Combine(StudioSetup.MediaDir, layer.File), w, h, layer.Opacity),
+                    "gif" => new GifSource(layer, Path.Combine(StudioSetup.MediaDir, layer.File), w, h),
                     "webcam" => new WebcamSource(layer, w, h),
                     "inputs" => new InputsSource(layer, w, h),
                     _ => null,
                 };
                 if (source == null) continue;
+                // GIF frames are turned once when they're loaded; live pictures are turned as they change.
+                if (layer.Rotation != 0 && layer.Type != "gif") source = new RotatedSource(source, w, h, layer.Rotation);
                 int rate = layer.Type == "inputs" ? Math.Min(fps, 60) : Math.Min(fps, 30);
-                var feed = new LiveLayerFeed(source, $"snappy-{Environment.ProcessId}-{sessionId}-{input}", w, h, rate, zeroTime);
+                var feed = new LiveLayerFeed(source, $"snappy-{Environment.ProcessId}-{sessionId}-{input}", cw, ch, rate, zeroTime);
                 _feeds.Add(feed);
                 InputArgs.AddRange(new[]
                 {
-                    "-f", "rawvideo", "-pix_fmt", "bgra", "-video_size", $"{w}x{h}", "-framerate", rate.ToString(),
+                    "-f", "rawvideo", "-pix_fmt", "bgra", "-video_size", $"{cw}x{ch}", "-framerate", rate.ToString(),
                     "-thread_queue_size", "8", "-i", Quote(feed.PipePath),
                 });
             }
-            _overlays.Add((input++, x, y, layer.Type != "image"));
+            _overlays.Add((input++, ox, oy, layer.Type != "image"));
         }
     }
 
@@ -99,24 +104,18 @@ public sealed class StudioPipeline : IDisposable
         return sb.ToString();
     }
 
-    private static void RenderStill(string source, int w, int h, double opacity, bool keepShape, string destination)
+    private static void RenderStill(StudioLayer layer, string source, int w, int h, string destination)
     {
         using var img = Image.FromFile(source);
         using var bmp = new Bitmap(w, h, PixelFormat.Format32bppArgb);
         using (var g = Graphics.FromImage(bmp))
         {
             Prepare(g);
-            using var attributes = Attributes(opacity);
-            var target = new Rectangle(0, 0, w, h);
-            if (keepShape)
-            {
-                double scale = Math.Min((double)w / img.Width, (double)h / img.Height);
-                int fitW = Math.Max(1, (int)Math.Round(img.Width * scale)), fitH = Math.Max(1, (int)Math.Round(img.Height * scale));
-                target = new Rectangle((w - fitW) / 2, (h - fitH) / 2, fitW, fitH);
-            }
-            g.DrawImage(img, target, 0, 0, img.Width, img.Height, GraphicsUnit.Pixel, attributes);
+            using var attributes = Attributes(layer.Opacity);
+            LayerDraw.Picture(g, img, layer, w, h, attributes);
         }
-        bmp.Save(destination, ImageFormat.Png);
+        using var turned = LayerDraw.Rotate(bmp, layer.Rotation);
+        turned.Save(destination, ImageFormat.Png);
     }
 
     internal static void Prepare(Graphics g)
@@ -153,7 +152,8 @@ public sealed class StudioPipeline : IDisposable
 /// <summary>Draws one frame of a live layer: BGRA, top-down, straight alpha.</summary>
 internal interface ILayerSource : IDisposable
 {
-    void Render(byte[] bgra, long nowHns);
+    /// <summary>Draws the frame for this moment. False when the buffer still holds the same picture as last time.</summary>
+    bool Render(byte[] bgra, long nowHns);
 }
 
 /// <summary>
@@ -234,7 +234,7 @@ internal sealed class InputsSource : ILayerSource
         if (_gamepad) GamepadHub.Claim(this);
     }
 
-    public void Render(byte[] bgra, long nowHns) =>
+    public bool Render(byte[] bgra, long nowHns) =>
         _renderer.Render(_listener.Live(), _gamepad ? GamepadHub.Current : null, bgra);
 
     public void Dispose()
@@ -253,8 +253,10 @@ internal sealed class GifSource : ILayerSource
     private readonly List<long> _ends = new(); // when each frame stops showing, in ms from the start of the loop
     private readonly long _startHns = Clock.NowHns();
     private readonly long _totalMs;
+    private int _shown = -1;
+    private byte[]? _shownInto;
 
-    public GifSource(string path, int w, int h, double opacity)
+    public GifSource(StudioLayer layer, string path, int w, int h)
     {
         using var img = Image.FromFile(path);
         var dimension = new FrameDimension(img.FrameDimensionsList[0]);
@@ -266,15 +268,17 @@ internal sealed class GifSource : ILayerSource
         using var canvas = new Bitmap(w, h, PixelFormat.Format32bppArgb);
         using var g = Graphics.FromImage(canvas);
         StudioPipeline.Prepare(g);
-        using var attributes = StudioPipeline.Attributes(opacity);
+        using var attributes = StudioPipeline.Attributes(layer.Opacity);
         long t = 0;
         for (int i = 0; i < count; i += step)
         {
             img.SelectActiveFrame(dimension, i);
             g.Clear(Color.Transparent);
-            g.DrawImage(img, new Rectangle(0, 0, w, h), 0, 0, img.Width, img.Height, GraphicsUnit.Pixel, attributes);
-            var pixels = new byte[w * h * 4];
-            StudioPipeline.CopyPixels(canvas, pixels);
+            g.ResetTransform();
+            LayerDraw.Picture(g, img, layer, w, h, attributes);
+            using var turned = LayerDraw.Rotate(canvas, layer.Rotation);
+            var pixels = new byte[turned.Width * turned.Height * 4];
+            StudioPipeline.CopyPixels(turned, pixels);
             _frames.Add(pixels);
             for (int k = i; k < Math.Min(count, i + step); k++) t += delays[k];
             _ends.Add(t);
@@ -299,12 +303,16 @@ internal sealed class GifSource : ILayerSource
         return delays;
     }
 
-    public void Render(byte[] bgra, long nowHns)
+    public bool Render(byte[] bgra, long nowHns)
     {
         long ms = (nowHns - _startHns) / 10_000 % _totalMs;
         int i = 0;
         while (i < _ends.Count - 1 && _ends[i] <= ms) i++;
+        if (i == _shown && ReferenceEquals(bgra, _shownInto)) return false;
+        _shown = i;
+        _shownInto = bgra;
         Buffer.BlockCopy(_frames[i], 0, bgra, 0, bgra.Length);
+        return true;
     }
 
     public void Dispose() => _frames.Clear();
@@ -336,15 +344,17 @@ internal sealed class WebcamSource : ILayerSource
         WebcamHub.SetClaims(this, new[] { layer.Device });
     }
 
-    public void Render(byte[] bgra, long nowHns)
+    public bool Render(byte[] bgra, long nowHns)
     {
         var frame = WebcamHub.Get(_layer.Device)?.Latest;
         if (frame == null)
         {
+            bool had = _sequence != -1;
             Array.Clear(bgra);
             _sequence = -1;
-            return;
+            return had;
         }
+        if (frame.Sequence == _sequence) return false;
         if (frame.Sequence != _sequence)
         {
             _sequence = frame.Sequence;
@@ -357,20 +367,20 @@ internal sealed class WebcamSource : ILayerSource
             try { Marshal.Copy(frame.Bgra, 0, data.Scan0, frame.Bgra.Length); }
             finally { _camera.UnlockBits(data); }
 
-            // Fill the layer and crop what sticks out, like object-fit: cover.
-            double scale = Math.Max((double)_w / frame.Width, (double)_h / frame.Height);
+            // The crop comes off the camera picture first, then it fills the layer and what sticks out is cut, like
+            // object-fit: cover.
+            float cx = (float)(frame.Width * _layer.CropL), cy = (float)(frame.Height * _layer.CropT);
+            float cropW = (float)(frame.Width * (1 - _layer.CropL - _layer.CropR)), cropH = (float)(frame.Height * (1 - _layer.CropT - _layer.CropB));
+            double scale = Math.Max(_w / cropW, _h / cropH);
             float sw = (float)(_w / scale), sh = (float)(_h / scale);
             _g.ResetTransform();
-            if (_layer.Mirror)
-            {
-                _g.TranslateTransform(_w, 0);
-                _g.ScaleTransform(-1, 1);
-            }
-            _g.DrawImage(_camera, new Rectangle(0, 0, _w, _h), (frame.Width - sw) / 2, (frame.Height - sh) / 2, sw, sh, GraphicsUnit.Pixel, _attributes);
+            LayerDraw.Flip(_g, _w, _h, _layer.Mirror, _layer.FlipY);
+            _g.DrawImage(_camera, new Rectangle(0, 0, _w, _h), cx + (cropW - sw) / 2, cy + (cropH - sh) / 2, sw, sh, GraphicsUnit.Pixel, _attributes);
             StudioPipeline.CopyPixels(_out, _rendered);
             for (int i = 0, p = 3; i < _alpha.Length; i++, p += 4) _rendered[p] = _alpha[i];
         }
         Buffer.BlockCopy(_rendered, 0, bgra, 0, _rendered.Length);
+        return true;
     }
 
     /// <summary>Per pixel alpha for the layer shape (corner radius matches the Studio preview), times opacity.</summary>

@@ -44,6 +44,23 @@ const Studio = (() => {
   const layerElement = (id) => layersEl.querySelector(`[data-id="${CSS.escape(id)}"]`);
   const layerName = (l) => l.name || (l.type === 'inputs' ? INPUT_KINDS.find((k) => k.id === l.input)?.name || 'Input overlay' : LAYER_NAMES[l.type]);
   const newId = () => Math.random().toString(36).slice(2, 10).padEnd(8, '0');
+  const turnTo = (a) => { a = ((((a + 180) % 360) + 360) % 360) - 180; return a === -180 ? 180 : Math.round(a * 10) / 10; };
+  const cropOf = (l) => ({ cropL: l.cropL || 0, cropT: l.cropT || 0, cropR: l.cropR || 0, cropB: l.cropB || 0 });
+  const isCropped = (l) => Object.values(cropOf(l)).some((v) => v > 0.001);
+
+  // Where the whole picture sits in a layer box so that, after the crop, it fills the box (or fits in it keeping its
+  // shape). The same maths as LayerDraw.Picture in the app, so the preview and the clip agree.
+  function pictureRect(l, boxW, boxH, natW, natH) {
+    const c = cropOf(l);
+    const sw = natW * (1 - c.cropL - c.cropR), sh = natH * (1 - c.cropT - c.cropB);
+    let tx = 0, ty = 0, tw = boxW, th = boxH;
+    if (l.fit === 'fit') {
+      const s = Math.min(boxW / sw, boxH / sh);
+      tw = sw * s; th = sh * s; tx = (boxW - tw) / 2; ty = (boxH - th) / 2;
+    }
+    const kx = tw / sw, ky = th / sh;
+    return { tx, ty, tw, th, ix: -natW * c.cropL * kx, iy: -natH * c.cropT * ky, iw: natW * kx, ih: natH * ky };
+  }
 
   function throttle(fn, ms) {
     let last = 0, timer = 0;
@@ -232,7 +249,8 @@ const Studio = (() => {
     el.dataset.id = l.id;
     el.hidden = !l.visible;
     if (l.type === 'image' || l.type === 'gif') {
-      el.innerHTML = `<img src="https://media.snappy/${encodeURIComponent(l.file)}" alt="" draggable="false">`;
+      el.innerHTML = `<div class="scrop"><img src="https://media.snappy/${encodeURIComponent(l.file)}" alt="" draggable="false"></div>`;
+      el.querySelector('img').addEventListener('load', () => placeLayer(el, findLayer(l.id)));
     } else if (l.type === 'webcam') {
       el.innerHTML = `<canvas></canvas><div class="slayer-wait">${icon('webcam')}<span>${l.device ? 'Starting camera…' : 'Pick a camera'}</span></div>`;
     } else {
@@ -246,6 +264,18 @@ const Studio = (() => {
     if (!el) return;
     const w = l.w * S.stageW, h = l.h * S.stageH;
     Object.assign(el.style, { left: `${l.x * S.stageW}px`, top: `${l.y * S.stageH}px`, width: `${w}px`, height: `${h}px`, opacity: l.opacity });
+    el.style.transform = l.rotation ? `rotate(${l.rotation}deg)` : '';
+    if (l.type === 'image' || l.type === 'gif') {
+      const img = el.querySelector('img'), box = el.querySelector('.scrop');
+      if (img && box && img.naturalWidth) {
+        const r = pictureRect(l, w, h, img.naturalWidth, img.naturalHeight);
+        Object.assign(box.style, {
+          left: `${r.tx}px`, top: `${r.ty}px`, width: `${r.tw}px`, height: `${r.th}px`,
+          transform: l.flipX || l.flipY ? `scale(${l.flipX ? -1 : 1}, ${l.flipY ? -1 : 1})` : '',
+        });
+        Object.assign(img.style, { left: `${r.ix}px`, top: `${r.iy}px`, width: `${r.iw}px`, height: `${r.ih}px` });
+      }
+    }
     if (l.type === 'webcam') {
       el.style.borderRadius = l.shape === 'circle' ? '50%' : l.shape === 'rounded' ? `${Math.min(w, h) * 0.12}px` : '0';
       const canvas = el.querySelector('canvas');
@@ -254,8 +284,8 @@ const Studio = (() => {
       if (canvas && (canvas.width !== cw || canvas.height !== ch)) {
         canvas.width = cw;
         canvas.height = ch;
-        redrawCamera(l.device);
       }
+      redrawCamera(l.device);
     }
   }
 
@@ -263,10 +293,14 @@ const Studio = (() => {
     const l = selectedLayer();
     if (!l || !l.visible) { selectionEl.innerHTML = ''; return; }
     if (!selectionEl.firstElementChild) {
-      selectionEl.innerHTML = '<div class="ssel"><i data-h="nw"></i><i data-h="ne"></i><i data-h="sw"></i><i data-h="se"></i></div>';
+      selectionEl.innerHTML = '<div class="ssel"><b class="ssel-turn" data-h="turn" title="Drag to turn, Shift snaps to 15°"></b>'
+        + ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'].map((h) => `<i data-h="${h}"></i>`).join('') + '</div>';
     }
-    Object.assign(selectionEl.firstElementChild.style, {
+    const box = selectionEl.firstElementChild;
+    box.classList.toggle('can-crop', l.type !== 'inputs');
+    Object.assign(box.style, {
       left: `${l.x * S.stageW}px`, top: `${l.y * S.stageH}px`, width: `${l.w * S.stageW}px`, height: `${l.h * S.stageH}px`,
+      transform: l.rotation ? `rotate(${l.rotation}deg)` : '',
     });
   }
 
@@ -278,7 +312,7 @@ const Studio = (() => {
 
   function renderHint() {
     $('#studioHint').innerHTML = scene()?.layers.length
-      ? '<span>Drag to move, corners resize</span><span>Shift resizes freely</span><span>Alt turns off snapping</span><span>Arrow keys nudge</span>'
+      ? '<span>Drag to move, edges and corners resize</span><span>Alt + drag an edge crops</span><span>The dot on top turns, Shift snaps</span><span>Arrow keys nudge</span>'
       : '';
   }
 
@@ -326,8 +360,34 @@ const Studio = (() => {
       ${prop('Place', `<div class="corner-picker">${['tl', 'tr', 'bl', 'br'].map((c) => `<button data-act="corner" data-corner="${c}" title="Move to this corner"></button>`).join('')}</div>
         <button class="btn ghost sm" data-act="center">Center</button><button class="btn ghost sm" data-act="fit">Fit</button>`)}
       ${prop('Size', `<button class="btn ghost sm" data-act="smaller">−</button><span class="value">${Math.round(l.w * S.width)}px</span><button class="btn ghost sm" data-act="bigger">+</button>`)}
+      ${prop('Turn', `<button class="btn ghost sm icon-only" data-act="turn" data-by="-90" title="Turn left">${icon('turn-left')}</button>`
+        + `<span class="value">${Math.round(l.rotation || 0)}°</span>`
+        + `<button class="btn ghost sm icon-only" data-act="turn" data-by="90" title="Turn right">${icon('turn-right')}</button>`
+        + (l.rotation ? '<button class="link-btn" data-act="turn-reset">Reset</button>' : ''))}
+      ${l.type !== 'inputs' ? prop('Flip', `<button class="btn ghost sm icon-only${(l.type === 'webcam' ? l.mirror : l.flipX) ? ' on' : ''}" data-act="flip-x" title="Flip left to right">${icon('flip-h')}</button>`
+        + `<button class="btn ghost sm icon-only${l.flipY ? ' on' : ''}" data-act="flip-y" title="Flip upside down">${icon('flip-v')}</button>`) : ''}
+      ${l.type !== 'inputs' ? prop('Crop', isCropped(l)
+        ? `<span class="value">${cropText(l)}</span><button class="link-btn" data-act="crop-reset">Reset</button>`
+        : '<span class="prop-hint">Alt + drag an edge</span>') : ''}
       <div class="panel-actions"><button class="btn danger-ghost sm" data-act="delete-layer">${icon('trash')}Delete layer</button></div>
     </div>`;
+  }
+
+  function cropText(l) {
+    const c = cropOf(l);
+    const parts = [['L', c.cropL], ['T', c.cropT], ['R', c.cropR], ['B', c.cropB]].filter(([, v]) => v > 0.001);
+    return parts.map(([side, v]) => `${side} ${Math.round(v * 100)}%`).join(' ');
+  }
+
+  // Gives back what the crop took off, keeping the picture where it is on screen.
+  function resetCrop(l) {
+    const c = cropOf(l);
+    const W = S.stageW, H = S.stageH, w = l.w * W, h = l.h * H;
+    const fw = w / (1 - c.cropL - c.cropR), fh = h / (1 - c.cropT - c.cropB);
+    const gx = ((c.cropR - c.cropL) * fw) / 2, gy = ((c.cropB - c.cropT) * fh) / 2;
+    const rad = ((l.rotation || 0) * Math.PI) / 180, cos = Math.cos(rad), sin = Math.sin(rad);
+    const cx = l.x * W + w / 2 + gx * cos - gy * sin, cy = l.y * H + h / 2 + gx * sin + gy * cos;
+    Object.assign(l, { cropL: 0, cropT: 0, cropR: 0, cropB: 0, w: fw / W, h: fh / H, x: (cx - fw / 2) / W, y: (cy - fh / 2) / H });
   }
 
   function inputProps(l) {
@@ -372,7 +432,6 @@ const Studio = (() => {
     const error = S.cameraErrors.get(l.device);
     return prop('Camera', `<select class="select" data-prop="device"${cams === null ? ' disabled' : ''}>${options}</select>`)
       + prop('Shape', segmented('shape', [['rect', 'Square'], ['rounded', 'Rounded'], ['circle', 'Circle']], l.shape))
-      + prop('Mirror', toggle('mirror', l.mirror))
       + (error ? `<div class="prop-note error">${esc(error)}</div>` : '');
   }
 
@@ -488,11 +547,14 @@ const Studio = (() => {
         if (!img) wait.querySelector('span').textContent = S.cameraErrors.get(device) || 'Starting camera…';
       }
       if (!img) continue;
-      const canvas = el.querySelector('canvas'), ctx = canvas.getContext('2d');
-      const scale = Math.max(canvas.width / img.width, canvas.height / img.height);
+      // Crop off the camera picture first, then fill the box (same as WebcamSource in the app).
+      const canvas = el.querySelector('canvas'), ctx = canvas.getContext('2d'), c = cropOf(l);
+      const cx = img.width * c.cropL, cy = img.height * c.cropT;
+      const cw = img.width * (1 - c.cropL - c.cropR), ch = img.height * (1 - c.cropT - c.cropB);
+      const scale = Math.max(canvas.width / cw, canvas.height / ch);
       const sw = canvas.width / scale, sh = canvas.height / scale;
-      ctx.setTransform(l.mirror ? -1 : 1, 0, 0, 1, l.mirror ? canvas.width : 0, 0);
-      ctx.drawImage(img, (img.width - sw) / 2, (img.height - sh) / 2, sw, sh, 0, 0, canvas.width, canvas.height);
+      ctx.setTransform(l.mirror ? -1 : 1, 0, 0, l.flipY ? -1 : 1, l.mirror ? canvas.width : 0, l.flipY ? canvas.height : 0);
+      ctx.drawImage(img, cx + (cw - sw) / 2, cy + (ch - sh) / 2, sw, sh, 0, 0, canvas.width, canvas.height);
     }
   }
 
@@ -769,24 +831,53 @@ const Studio = (() => {
     renderGuides();
   }
 
-  function resizeLayer(l, o, handle, dx, dy, free) {
-    const west = handle.includes('w'), north = handle.includes('n');
-    let w = Math.max(0.01, o.w + (west ? -dx : dx));
-    let h = Math.max(0.01, o.h + (north ? -dy : dy));
-    if (!free || l.type === 'inputs') {
-      const aspect = (o.w * S.width) / (o.h * S.height);
-      if ((w * S.width) / aspect / S.height > h) h = (w * S.width) / aspect / S.height;
-      else w = (h * S.height * aspect) / S.width;
+  // Resizes (or crops) from a handle. The pointer's movement is read along the layer's own sides, so a turned layer
+  // resizes the way it looks, and the opposite side stays where it is.
+  function resizeLayer(l, o, handle, pdx, pdy, { free, crop }) {
+    const W = S.stageW, H = S.stageH;
+    const rad = ((o.rotation || 0) * Math.PI) / 180, cos = Math.cos(rad), sin = Math.sin(rad);
+    const lx = pdx * cos + pdy * sin, ly = -pdx * sin + pdy * cos;
+    const east = handle.includes('e'), west = handle.includes('w'), south = handle.includes('s'), north = handle.includes('n');
+    const ow = o.w * W, oh = o.h * H;
+    let w = ow, h = oh;
+    if (crop) {
+      // Cropping cuts the picture instead of squeezing it: the box shrinks and the picture stays the same size.
+      const c = cropOf(o);
+      const fw = ow / (1 - c.cropL - c.cropR), fh = oh / (1 - c.cropT - c.cropB);
+      if (east) c.cropR = clamp(c.cropR - lx / fw, 0, 0.9 - c.cropL);
+      if (west) c.cropL = clamp(c.cropL + lx / fw, 0, 0.9 - c.cropR);
+      if (south) c.cropB = clamp(c.cropB - ly / fh, 0, 0.9 - c.cropT);
+      if (north) c.cropT = clamp(c.cropT + ly / fh, 0, 0.9 - c.cropB);
+      w = fw * (1 - c.cropL - c.cropR);
+      h = fh * (1 - c.cropT - c.cropB);
+      Object.assign(l, c);
+    } else {
+      if (east) w = ow + lx;
+      if (west) w = ow - lx;
+      if (south) h = oh + ly;
+      if (north) h = oh - ly;
+      w = Math.max(8, w);
+      h = Math.max(8, h);
+      const side = (east || west) !== (north || south);
+      if ((!side && !free) || l.type === 'inputs') {
+        const aspect = ow / oh;
+        if (side && (east || west)) h = w / aspect;
+        else if (side) w = h * aspect;
+        else if (w / aspect > h) h = w / aspect;
+        else w = h * aspect;
+      }
     }
-    l.w = w;
-    l.h = h;
-    l.x = west ? o.x + o.w - w : o.x;
-    l.y = north ? o.y + o.h - h : o.y;
+    const gx = ((w - ow) / 2) * (east ? 1 : west ? -1 : 0), gy = ((h - oh) / 2) * (south ? 1 : north ? -1 : 0);
+    const cx = o.x * W + ow / 2 + gx * cos - gy * sin, cy = o.y * H + oh / 2 + gx * sin + gy * cos;
+    l.w = w / W;
+    l.h = h / H;
+    l.x = (cx - w / 2) / W;
+    l.y = (cy - h / 2) / H;
   }
 
   stage.addEventListener('pointerdown', (e) => {
     if (e.button !== 0 || !scene() || e.target.closest('#studioEmpty')) return;
-    const handle = e.target.closest('.ssel i');
+    const handle = e.target.closest('.ssel [data-h]');
     const hit = e.target.closest('.slayer');
     if (!handle && !hit) { if (S.selected) select(null); return; }
     const l = handle ? selectedLayer() : findLayer(hit.dataset.id);
@@ -796,8 +887,10 @@ const Studio = (() => {
     const mode = handle ? handle.dataset.h : 'move';
     const start = { x: e.clientX, y: e.clientY, l: { ...l } };
     const el = layerElement(l.id);
+    const origin = layersEl.getBoundingClientRect();
+    const center = { x: origin.left + (l.x + l.w / 2) * S.stageW, y: origin.top + (l.y + l.h / 2) * S.stageH };
     let moved = false;
-    stage.setPointerCapture(e.pointerId);
+    try { stage.setPointerCapture(e.pointerId); } catch { /* synthetic pointer */ }
     const onMove = (ev) => {
       if (!moved && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < 3) return;
       moved = true;
@@ -806,8 +899,15 @@ const Studio = (() => {
         l.x = start.l.x + dx;
         l.y = start.l.y + dy;
         if (ev.altKey) { S.guides = []; renderGuides(); } else snapMove(l);
+      } else if (mode === 'turn') {
+        let a = (Math.atan2(ev.clientY - center.y, ev.clientX - center.x) * 180) / Math.PI + 90;
+        if (ev.shiftKey) a = Math.round(a / 15) * 15;
+        else if (Math.abs(a - Math.round(a / 90) * 90) < 3) a = Math.round(a / 90) * 90; // straight angles pull a little
+        l.rotation = turnTo(a);
       } else {
-        resizeLayer(l, start.l, mode, dx, dy, ev.shiftKey);
+        // Alt crops from any handle (like OBS); Shift crops from a side, where resizing is free anyway.
+        const crop = l.type !== 'inputs' && (ev.altKey || (ev.shiftKey && mode.length === 1));
+        resizeLayer(l, start.l, mode, ev.clientX - start.x, ev.clientY - start.y, { free: ev.shiftKey, crop });
       }
       placeLayer(el, l);
       renderSelection();
@@ -818,7 +918,7 @@ const Studio = (() => {
       stage.removeEventListener('pointercancel', onUp);
       S.guides = [];
       renderGuides();
-      if (moved) commit({ panel: false });
+      if (moved) commit({ panel: mode !== 'move' });
     };
     stage.addEventListener('pointermove', onMove);
     stage.addEventListener('pointerup', onUp);
@@ -890,7 +990,7 @@ const Studio = (() => {
       commit({ rebuild: true });
       return;
     }
-    if (!btn || !l && ['up', 'down', 'eye', 'delete-layer', 'corner', 'center', 'fit', 'smaller', 'bigger', 'kind', 'preset', 'add-key', 'remove-key', 'accent'].includes(btn.dataset.act)) {
+    if (!btn || !l && ['up', 'down', 'eye', 'delete-layer', 'corner', 'center', 'fit', 'smaller', 'bigger', 'kind', 'preset', 'add-key', 'remove-key', 'accent', 'turn', 'turn-reset', 'flip-x', 'flip-y', 'crop-reset'].includes(btn.dataset.act)) {
       if (btn?.dataset.act === 'add-layer') addLayerMenu(btn.getBoundingClientRect().left, btn.getBoundingClientRect().bottom + 4);
       return;
     }
@@ -924,6 +1024,11 @@ const Studio = (() => {
       case 'center': l.x = (1 - l.w) / 2; l.y = (1 - l.h) / 2; commit(); break;
       case 'fit': fitToFrame(l); commit(); break;
       case 'smaller': resize(l, 1 / 1.12); commit(); break;
+      case 'turn': l.rotation = turnTo(Math.round(((l.rotation || 0) + Number(btn.dataset.by)) / 90) * 90); commit(); break;
+      case 'turn-reset': l.rotation = 0; commit(); break;
+      case 'flip-x': if (l.type === 'webcam') l.mirror = !l.mirror; else l.flipX = !l.flipX; commit(); break;
+      case 'flip-y': l.flipY = !l.flipY; commit(); break;
+      case 'crop-reset': resetCrop(l); commit(); break;
       case 'bigger': resize(l, 1.12); commit(); break;
       case 'add-app': addAppMenu(r.left, r.bottom + 4); break;
       case 'remove-app': sc.apps = sc.apps.filter((a) => a.exe !== btn.dataset.exe); commit(); break;

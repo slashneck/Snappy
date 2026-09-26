@@ -139,6 +139,33 @@ public static partial class ClipMedia
         catch { }
     }
 
+    /// <summary>
+    /// Time of the last keyframe at or before <paramref name="time"/>. A lossless cut can only start on a keyframe, so
+    /// everything that has to stay in step with the copied picture (edited audio, markers) must start there as well.
+    /// Only keyframes are decoded, so this takes a moment even for long clips.
+    /// </summary>
+    public static async Task<double> KeyframeAtOrBeforeAsync(string path, double time)
+    {
+        if (time <= 0.001) return 0;
+        // Snappy puts a keyframe in every second, other recorders can leave several seconds between them. The seek
+        // lands on the keyframe before 'from' and keeps it (no accurate seek), so one always turns up.
+        double from = Math.Max(0, time - 10);
+        string F(double v) => v.ToString("0.######", CultureInfo.InvariantCulture);
+        var (_, stderr) = await RunFfmpegAsync(new[]
+        {
+            "-hide_banner", "-nostdin", "-skip_frame", "nokey", "-noaccurate_seek", "-ss", F(from), "-t", F(time - from + 0.5),
+            "-i", path, "-map", "0:v:0", "-an", "-vf", "showinfo", "-f", "null", "-",
+        });
+        double best = -1;
+        foreach (Match m in KeyframeTimeRegex().Matches(stderr))
+        {
+            // With the seek on the input, times are counted from where the seek landed.
+            double at = from + double.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture);
+            if (at <= time + 0.0005 && at > best) best = at;
+        }
+        return best >= 0 ? Math.Max(0, best) : time;
+    }
+
     internal static ProcessStartInfo NewFfmpeg(IEnumerable<string> args)
     {
         var psi = new ProcessStartInfo(AppPaths.FfmpegExe)
@@ -160,6 +187,7 @@ public static partial class ClipMedia
     }
 
     [GeneratedRegex(@"Duration: (\d+:\d+:\d+(?:\.\d+)?)")] private static partial Regex DurationRegex();
+    [GeneratedRegex(@"pts_time:(-?[\d.]+)")] private static partial Regex KeyframeTimeRegex();
     [GeneratedRegex(@"Stream #\d+:\d+(?:\[[^\]]*\])?(?:\([^)]*\))?: (Video|Audio): (.*)")] private static partial Regex StreamRegex();
     [GeneratedRegex(@"(\d{2,5})x(\d{2,5})")] private static partial Regex SizeRegex();
     [GeneratedRegex(@"([\d.]+) fps")] private static partial Regex FpsRegex();

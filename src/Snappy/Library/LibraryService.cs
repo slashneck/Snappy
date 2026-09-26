@@ -6,7 +6,7 @@ using Snappy.Platform;
 namespace Snappy.Library;
 
 public sealed record ClipDto(string Id, string Title, string Folder, string FileName, long Size, double Duration,
-    int Width, int Height, DateTime Created, string VideoUrl, string? ThumbUrl, bool Favorite, double[] Markers);
+    int Width, int Height, DateTime Created, string VideoUrl, string? ThumbUrl, bool Favorite, double[] Markers, string? Source);
 
 public sealed record FolderDto(string Name, int Count, long Size);
 
@@ -98,7 +98,7 @@ public sealed class LibraryService : IDisposable
         string? thumb = meta.Duration > 0 ? Thumbnails.GetUrlOrQueue(f, meta.Duration) : null;
         return new ClipDto(id, Path.GetFileNameWithoutExtension(f.Name), folder, f.Name, f.Length, meta.Duration,
             meta.Width, meta.Height, f.CreationTimeUtc < f.LastWriteTimeUtc ? f.CreationTimeUtc : f.LastWriteTimeUtc,
-            videoUrl, thumb, clipMeta?.Favorite ?? false, clipMeta?.Markers.ToArray() ?? Array.Empty<double>());
+            videoUrl, thumb, clipMeta?.Favorite ?? false, clipMeta?.Markers.ToArray() ?? Array.Empty<double>(), clipMeta?.Source);
     }
 
     /// <summary>Maps a clip id from the UI to a real path, refusing anything outside the library.</summary>

@@ -48,6 +48,10 @@
       <symbol id="i-webcam" viewBox="0 0 24 24"><circle cx="12" cy="10" r="6.5"/><circle cx="12" cy="10" r="2.5"/><path d="M8 20.5h8M12 16.5v4"/></symbol>
       <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/></symbol>
       <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="m4 4 16 16"/><path d="M9.5 6a9.6 9.6 0 0 1 2.5-.5c6 0 9.5 6.5 9.5 6.5a17 17 0 0 1-2.8 3.5M6.2 7.8A16.6 16.6 0 0 0 2.5 12S6 18.5 12 18.5a9 9 0 0 0 3.9-.9"/></symbol>
+      <symbol id="i-turn-left" viewBox="0 0 24 24"><path d="M4 9h9a6 6 0 0 1 0 12H9"/><path d="m8 5-4 4 4 4"/></symbol>
+      <symbol id="i-turn-right" viewBox="0 0 24 24"><path d="M20 9h-9a6 6 0 0 0 0 12h4"/><path d="m16 5 4 4-4 4"/></symbol>
+      <symbol id="i-flip-h" viewBox="0 0 24 24"><path d="M12 3v18M9 7 4 17h5zM15 7l5 10h-5z"/></symbol>
+      <symbol id="i-flip-v" viewBox="0 0 24 24"><path d="M3 12h18M7 9 17 4v5zM7 15l10 5v-5z"/></symbol>
       <symbol id="i-up" viewBox="0 0 24 24"><path d="m6 14.5 6-6 6 6"/></symbol>
       <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9.5 6 6 6-6"/></symbol>
     </defs>
@@ -116,6 +120,7 @@
             <option value="largest">Largest</option>
             <option value="name">Name</option>
           </select>
+          <button class="btn ghost" id="importBtn" title="Bring in clips from NVIDIA, Medal, Xbox Game Bar, OBS and others"><svg><use href="#i-inbox"/></svg><span>Import</span></button>
           <button class="btn ghost" id="selectModeBtn"><svg><use href="#i-select"/></svg><span>Select</span></button>
         </header>
 
@@ -287,6 +292,9 @@
         <button class="btn" id="modalOk">OK</button>
       </div>
     </div>
+  </div>
+  <div class="modal-backdrop" id="importDialog" hidden>
+    <div class="modal import-modal" id="importBody"></div>
   </div>
   <div class="modal-backdrop" id="licenses" hidden>
     <div class="modal licenses">

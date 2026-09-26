@@ -11,7 +11,10 @@ public sealed class ClipMetaData
     /// <summary>Marked moments, in seconds from the start of the clip.</summary>
     public List<double> Markers { get; set; } = new();
 
-    public bool IsEmpty => !Favorite && Markers.Count == 0;
+    /// <summary>The app an imported clip came from (NVIDIA, Medal...), empty for Snappy's own clips.</summary>
+    public string? Source { get; set; }
+
+    public bool IsEmpty => !Favorite && Markers.Count == 0 && string.IsNullOrEmpty(Source);
 }
 
 /// <summary>
@@ -103,6 +106,7 @@ public static class ClipMeta
         var copy = new ClipMetaData
         {
             Favorite = meta.Favorite,
+            Source = meta.Source,
             Markers = meta.Markers.Where(m => m >= start && m <= end).Select(m => Math.Round(m - start, 2)).ToList(),
         };
         try { Write(destination, copy); }

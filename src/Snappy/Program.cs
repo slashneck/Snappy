@@ -35,6 +35,8 @@ internal static class Program
             return SelfTest.InputTest();
         if (args.Length > 0 && args[0] == "--test-programs")
             return SelfTest.ProgramAudioTest(args.Length > 1 ? int.Parse(args[1]) : 10);
+        if (args.Length > 2 && args[0] == "--test-shrink")
+            return SelfTest.ShrinkTest(args[1], double.Parse(args[2], System.Globalization.CultureInfo.InvariantCulture), args.Length > 3 ? args[3] : null);
         if (args.Length > 2 && args[0] == "--test-export")
             return SelfTest.ExportTest(args[1], args[2]);
 #endif
@@ -119,16 +121,34 @@ internal static class SelfTest
     {
         // full: trim 2..8 s, crop 640x360 at (100,50), desktop at 50 %, mic muted 3..5 s (re-encodes)
         // fast: trim 1..9 s, desktop muted, video copied
+        // Anything else is a JSON file holding an EditSpec, for checking one case exactly.
         var spec = testCase == "full"
             ? new EditSpec(2, 8, "precise", false, new CropSpec(100, 50, 640, 360),
                 new List<AudioLaneSpec> { new(1, 0.5, false, null), new(2, 1, false, new List<RangeSpec> { new(3, 5) }) })
-            : new EditSpec(1, 9, "fast", false, null, new List<AudioLaneSpec> { new(1, 1, true, null) });
+            : testCase == "fast"
+                ? new EditSpec(1, 9, "fast", false, null, new List<AudioLaneSpec> { new(1, 1, true, null) })
+                : System.Text.Json.JsonSerializer.Deserialize<EditSpec>(File.ReadAllText(testCase),
+                    new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web))!;
 
         string encoder = Video.FfmpegArgs.ResolveEncoder("auto");
         string output = EditExporter.ExportAsync(clip, spec, encoder, null, CancellationToken.None).GetAwaiter().GetResult();
         Console.WriteLine($"OK {output}");
         return 0;
     }
+    /// <summary>Shrinks a clip to a size, optionally with editor changes from a JSON EditSpec file.</summary>
+    public static int ShrinkTest(string clip, double targetMb, string? specFile)
+    {
+        var spec = specFile != null
+            ? System.Text.Json.JsonSerializer.Deserialize<EditSpec>(File.ReadAllText(specFile),
+                new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web))!
+            : new EditSpec(0, 0, "fast", false, null, null);
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        string output = ShrinkExporter.ExportAsync(clip, spec, targetMb, Video.FfmpegArgs.ResolveEncoder("auto"), null, CancellationToken.None)
+            .GetAwaiter().GetResult();
+        Console.WriteLine($"OK {output} in {sw.Elapsed.TotalSeconds:F0}s");
+        return 0;
+    }
+
     /// <summary>Renders every input overlay into PNGs with a few keys and buttons held, to check how they look.</summary>
     public static int RenderOverlays(string folder)
     {

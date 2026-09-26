@@ -33,10 +33,12 @@ you can go further and give every program that made a sound its own track, so mu
 mutes the call and leaves the game.
 
 **A library that sorts itself.** Every clip goes into a folder for the game or app you were in. Favorites, search and
-hover previews are built in, and moving a clip in Snappy moves the file on disk.
+hover previews are built in, and moving a clip in Snappy moves the file on disk. Clips from NVIDIA, Medal, Xbox Game
+Bar, OBS and others can be imported from their folder, sorted by game and marked with where they came from.
 
-**Edit without another app.** Trim to the exact frame, crop, mute parts of a track, grab a frame as a picture, or shrink
-a clip so it fits Discord's upload limit. Several clips can be joined into a montage.
+**Edit without another app.** Trim to the exact frame, crop, mute parts of a track (zoom in to mute a single word), grab
+a frame as a picture, or shrink a clip so it fits Discord's upload limit while staying at 60 fps. Several clips can be
+joined into a montage.
 
 **Little things.** Screenshots with a hotkey, sorted per game like clips. Mark a moment while you play and find it again
 on the clip's timeline. An optional storage limit sends your oldest clips to the Recycle Bin, and never your favorites.
@@ -44,7 +46,7 @@ on the clip's timeline. An optional storage limit sends your oldest clips to the
 ## Studio
 
 Put pictures, GIFs, your facecam or an input overlay into your clips: the keys you pick, a whole keyboard, or your
-mouse with its buttons and movement. Layers are drawn into the recording only, so they never show up on your screen
+mouse with its buttons and movement. Layers can be turned, flipped and cropped like in OBS. They are drawn into the recording only, so they never show up on your screen
 while you play. Press the snap hotkey to take a still of your screen and arrange everything on top of it, right where it
 will end up.
 

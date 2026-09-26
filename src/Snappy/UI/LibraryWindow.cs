@@ -49,6 +49,7 @@ public sealed class LibraryWindow : Form
     private readonly CancellationTokenSource _closing = new();
     private readonly System.Windows.Forms.Timer _inputTimer = new() { Interval = 33 };
     private StudioPreview? _studioPreview;
+    private CancellationTokenSource? _import;
     private HotkeyListener? _snapHotkey;
     private string _lastInputState = "";
     private bool _ready;
@@ -331,8 +332,6 @@ public sealed class LibraryWindow : Form
             }
             case "studio.open":
                 _studioPreview ??= new StudioPreview();
-                // Keeps this window out of the snapshot, so Studio never photographs itself.
-                SetWindowDisplayAffinity(Handle, WDA_EXCLUDEFROMCAPTURE);
                 StartSnapHotkey();
                 _lastInputState = "";
                 _inputTimer.Start();
@@ -446,6 +445,53 @@ public sealed class LibraryWindow : Form
                 }
                 return _recorder.Settings;
             }
+            case "import.pickFolder":
+            {
+                using var dlg = new FolderBrowserDialog
+                {
+                    InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyVideos),
+                    UseDescriptionForTitle = true,
+                    Description = "Pick the folder another app saved its clips in (NVIDIA, Medal, Xbox Game Bar, OBS...)",
+                };
+                return dlg.ShowDialog(this) == DialogResult.OK ? dlg.SelectedPath : null;
+            }
+            case "import.scan":
+            {
+                string folder = Str("folder");
+                if (!Directory.Exists(folder)) throw new InvalidOperationException("That folder doesn't exist anymore.");
+                if (string.Equals(Path.GetFullPath(folder).TrimEnd('\\'), Path.GetFullPath(_library.Root).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("That's Snappy's own clips folder.");
+                return await Task.Run(() => ClipImporter.Scan(folder, _library.Root));
+            }
+            case "import.start":
+            {
+                if (_import != null) throw new InvalidOperationException("An import is already running.");
+                string folder = Str("folder"), source = Str("source").Trim();
+                bool move = Bool("move");
+                if (source.Length == 0 || source.Length > 40) source = "Other app";
+                _import = CancellationTokenSource.CreateLinkedTokenSource(_closing.Token);
+                var token = _import.Token;
+                long lastPost = 0;
+                var progress = new Progress<ImportProgress>(pr =>
+                {
+                    long now = Environment.TickCount64;
+                    if (now - lastPost < 150 && pr.Done < pr.Total) return;
+                    lastPost = now;
+                    PostEvent("importProgress", pr);
+                });
+                _ = Task.Run(async () =>
+                {
+                    ImportResult result;
+                    try { result = await ClipImporter.RunAsync(folder, _library.Root, source, move, progress, token); }
+                    catch (Exception ex) { Log.Error("Import failed", ex); result = new ImportResult(0, 0, 0, false, ex.Message); }
+                    _import = null;
+                    PostEvent("importDone", result);
+                });
+                return true;
+            }
+            case "import.cancel":
+                _import?.Cancel();
+                return true;
             case "settings.pickFolder":
             {
                 using var dlg = new FolderBrowserDialog { InitialDirectory = _recorder.Settings.ClipsFolder, UseDescriptionForTitle = true, Description = "Where should Snappy save clips?" };
@@ -562,7 +608,24 @@ public sealed class LibraryWindow : Form
     private bool TakeStudioSnapshot()
     {
         var display = _recorder.Video?.Display ?? Displays.Resolve(_recorder.Settings.MonitorDeviceName);
-        bool taken = _studioPreview?.TakeSnapshot(display) ?? false;
+        if (_studioPreview == null) return false;
+        // Snappy steps out of the picture for just this one frame, so the snapshot shows the game behind it. The rest
+        // of the time the window stays visible to screen shares and screenshots like any other window.
+        bool hidden = IsHandleCreated && SetWindowDisplayAffinity(Handle, WDA_EXCLUDEFROMCAPTURE);
+        bool taken;
+        try
+        {
+            if (hidden)
+            {
+                DwmFlush(); // the next composed frame leaves the window out
+                DwmFlush(); // and this one is on screen
+            }
+            taken = _studioPreview.TakeSnapshot(display);
+        }
+        finally
+        {
+            if (hidden) SetWindowDisplayAffinity(Handle, 0);
+        }
         if (taken) PostEvent("studioSnapshot", null);
         return taken;
     }
@@ -576,7 +639,6 @@ public sealed class LibraryWindow : Form
         _studioPreview.Dispose();
         _studioPreview = null;
         StudioPreview.ForgetLater(TimeSpan.FromMinutes(10));
-        if (IsHandleCreated) SetWindowDisplayAffinity(Handle, 0);
         try { _recorder.Studio.CleanMedia(); }
         catch (Exception ex) { Log.Warn($"Studio media cleanup failed: {ex.Message}"); }
     }
@@ -620,6 +682,9 @@ public sealed class LibraryWindow : Form
 
     [DllImport("user32.dll")]
     private static extern bool SetWindowDisplayAffinity(IntPtr hwnd, uint affinity);
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmFlush();
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);

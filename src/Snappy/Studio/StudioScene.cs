@@ -16,6 +16,15 @@ public sealed class StudioLayer
     public double W { get; set; } = 0.2;
     public double H { get; set; } = 0.2;
     public double Opacity { get; set; } = 1;
+    public double Rotation { get; set; }   // degrees clockwise, around the middle of the box
+
+    // image, gif, webcam: how much of the picture is cut off on each side (0 to 0.9), and flips
+    public double CropL { get; set; }
+    public double CropT { get; set; }
+    public double CropR { get; set; }
+    public double CropB { get; set; }
+    public bool FlipX { get; set; }        // a webcam uses Mirror for this
+    public bool FlipY { get; set; }
 
     // image, gif
     public string File { get; set; } = "";
@@ -94,6 +103,13 @@ public sealed class StudioScene
             l.W = Math.Clamp(l.W, 0.005, 2);
             l.H = Math.Clamp(l.H, 0.005, 2);
             l.Opacity = Math.Clamp(l.Opacity, 0, 1);
+            l.Rotation = double.IsFinite(l.Rotation) ? Math.IEEERemainder(l.Rotation, 360) : 0;
+            if (Math.Abs(l.Rotation) < 0.05) l.Rotation = 0;
+            l.CropL = Math.Clamp(double.IsFinite(l.CropL) ? l.CropL : 0, 0, 0.9);
+            l.CropR = Math.Clamp(double.IsFinite(l.CropR) ? l.CropR : 0, 0, 0.9 - l.CropL);
+            l.CropT = Math.Clamp(double.IsFinite(l.CropT) ? l.CropT : 0, 0, 0.9);
+            l.CropB = Math.Clamp(double.IsFinite(l.CropB) ? l.CropB : 0, 0, 0.9 - l.CropT);
+            if (l.Type == "inputs") { l.CropL = l.CropT = l.CropR = l.CropB = 0; l.FlipX = l.FlipY = false; }
             l.File = Path.GetFileName(l.File ?? ""); // only ever a file inside the Studio folder
             l.Device ??= "";
             l.Shape = l.Shape is "rect" or "circle" ? l.Shape : "rounded";

@@ -36,10 +36,19 @@ public static class EditExporter
 
         var crop = spec.Crop != null ? ClampCrop(spec.Crop, info) : null;
         bool encodeVideo = crop != null || spec.Mode == "precise";
+        if (!encodeVideo && start > 0)
+        {
+            // The copied picture starts on the keyframe before the cut. Audio and markers have to start there too,
+            // otherwise edited audio begins up to a second after the picture and the clip opens in silence.
+            start = await ClipMedia.KeyframeAtOrBeforeAsync(input, start);
+            duration = end - start;
+        }
 
         string F(double v) => v.ToString("0.###", CultureInfo.InvariantCulture);
+        // A tiny step past the keyframe, so rounding can never land just before it and pull in the previous one.
+        string seek = (start > 0 && !encodeVideo ? start + 0.0002 : start).ToString("0.######", CultureInfo.InvariantCulture);
         var args = new List<string> { "-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-progress", "pipe:1", "-nostats",
-            "-ss", F(start), "-t", F(duration), "-i", input };
+            "-ss", seek, "-t", F(duration), "-i", input };
 
         var filters = new List<string>();
         string videoMap = "0:v:0";
@@ -185,6 +194,37 @@ public static class EditExporter
             result.Add(($"[a{t.Index}]", t.Title));
         }
         return result;
+    }
+
+    /// <summary>
+    /// A single track with the editor's audio changes applied, for copies where only the first track matters
+    /// (players and Discord only play that one). Returns what to map, or null when the clip has no sound.
+    /// </summary>
+    internal static string? BuildMix(ClipMediaInfo info, List<AudioLaneSpec> lanes, double start, double duration, List<string> filters)
+    {
+        if (info.AudioTracks.Count == 0) return null;
+        if (!lanes.Any(IsEdited)) return "0:a:0";
+        AudioLaneSpec LaneFor(int track) => lanes.FirstOrDefault(l => l.Track == track) ?? new AudioLaneSpec(track, 1, false, null);
+
+        var sources = ProgramTracks(info);
+        if (sources.Count <= 1)
+        {
+            var (desktop, mic) = FindDesktopAndMic(info);
+            sources = desktop != null && mic != null ? new List<AudioTrackInfo> { desktop, mic } : new List<AudioTrackInfo> { info.AudioTracks[0] };
+        }
+        if (sources.Count == 1)
+        {
+            filters.Add($"[0:a:{sources[0].Index}]{LaneFilter(LaneFor(sources[0].Index), start, duration)}[mix]");
+            return "[mix]";
+        }
+        var inputs = new List<string>();
+        foreach (var t in sources)
+        {
+            filters.Add($"[0:a:{t.Index}]{LaneFilter(LaneFor(t.Index), start, duration)},aformat=channel_layouts=stereo[s{t.Index}]");
+            inputs.Add($"[s{t.Index}]");
+        }
+        filters.Add($"{string.Concat(inputs)}amix=inputs={inputs.Count}:normalize=0:duration=longest,alimiter=limit=0.97:latency=1[mix]");
+        return "[mix]";
     }
 
     /// <summary>The per-program tracks of a clip that was split by program, with the mic if there is one.</summary>

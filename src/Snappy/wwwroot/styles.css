@@ -601,3 +601,27 @@ input[type="range"]::-webkit-slider-thumb { appearance: none; width: 14px; heigh
   clip-path: inset(0 calc((1 - var(--level, 0)) * 100%) 0 0); transition: clip-path .09s linear;
 }
 .level.off { opacity: .3; }
+
+/* ---------- scrollbar under zoomed audio tracks ---------- */
+.lane-scroll { position: relative; height: 8px; margin-top: 2px; border-radius: 4px; background: var(--surface-2); cursor: pointer; touch-action: none; }
+.lane-scroll-thumb { position: absolute; top: 0; bottom: 0; min-width: 12px; border-radius: 4px; background: rgba(244, 244, 244, 0.35); cursor: grab; }
+.lane-scroll-thumb:hover, .lane-scroll:active .lane-scroll-thumb { background: rgba(244, 244, 244, 0.6); }
+
+/* ---------- importing clips from other apps ---------- */
+.card-source { color: var(--text-2); }
+.import-modal { width: min(480px, calc(100vw - 40px)); }
+.import-where { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.import-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; font-size: 13px; color: var(--text-2); }
+.import-row.stack { flex-direction: column; align-items: stretch; gap: 8px; }
+.import-games { display: flex; flex-wrap: wrap; gap: 6px; }
+.import-game { padding: 3px 9px; border-radius: 7px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line-2); font-size: 12px; color: var(--text); }
+.import-game.more { color: var(--text-3); }
+.import-options { display: grid; gap: 8px; margin: 4px 0 14px; }
+.import-option { display: flex; gap: 10px; padding: 10px 12px; border-radius: 10px; box-shadow: inset 0 0 0 1px var(--line-2); cursor: pointer; }
+.import-option.on { box-shadow: inset 0 0 0 1.5px var(--text); background: rgba(255, 255, 255, 0.03); }
+.import-option input { margin-top: 3px; accent-color: #f4f4f4; }
+.import-option b { display: block; font-size: 13px; color: var(--text); }
+.import-option small { display: block; margin-top: 2px; font-size: 12px; line-height: 1.4; color: var(--text-3); }
+.import-warn { color: #f3d08a !important; font-size: 12.5px; }
+.import-bar { height: 6px; margin: -6px 0 16px; border-radius: 3px; background: var(--surface-3); overflow: hidden; }
+.import-bar i { display: block; height: 100%; width: 0; background: var(--text); transition: width .2s; }
