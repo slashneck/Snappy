@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -59,7 +59,7 @@ public sealed class LibraryWindow : Form
         _recorder = recorder;
         _updates = updates;
         _applySettings = applySettings;
-        _library = new LibraryService(recorder.Settings.ClipsFolder);
+        _library = new LibraryService(recorder.Settings.ClipsFolder, recorder.Settings.ExtraClipFolders);
 
         Text = "Snappy";
         if (icon != null) Icon = icon;
@@ -157,6 +157,32 @@ public sealed class LibraryWindow : Form
         core.SetVirtualHostNameToFolderMapping(LibraryService.VideoHost, _library.Root, CoreWebView2HostResourceAccessKind.Allow);
         core.SetVirtualHostNameToFolderMapping(LibraryService.ThumbHost, _library.Thumbnails.Directory, CoreWebView2HostResourceAccessKind.Allow);
         core.SetVirtualHostNameToFolderMapping(CacheHost, ClipMedia.CacheDir, CoreWebView2HostResourceAccessKind.Allow);
+        MapExtraHosts();
+    }
+
+    private string _mappedExtras = "";
+    private readonly List<int> _mappedIndexes = new();
+
+    /// <summary>Lets the page load videos from the extra clip folders that are connected right now.</summary>
+    private void MapExtraHosts()
+    {
+        var core = _web.CoreWebView2;
+        var extras = _library.ConnectedExtras();
+        string key = string.Join('|', extras.Select(e => $"{e.Index}={e.Path}"));
+        if (core == null || key == _mappedExtras) return;
+        foreach (int old in _mappedIndexes)
+            try { core.ClearVirtualHostNameToFolderMapping(LibraryService.HostFor(old)); } catch (ArgumentException) { }
+        _mappedIndexes.Clear();
+        foreach (var (index, path) in extras)
+        {
+            try
+            {
+                core.SetVirtualHostNameToFolderMapping(LibraryService.HostFor(index), path, CoreWebView2HostResourceAccessKind.Allow);
+                _mappedIndexes.Add(index);
+            }
+            catch (Exception ex) { Log.Warn($"Couldn't make {path} reachable for the player: {ex.Message}"); }
+        }
+        _mappedExtras = key;
     }
 
     private void OnScreenshotSaved(string path) =>
@@ -232,7 +258,23 @@ public sealed class LibraryWindow : Form
                     update = _updates.Status,
                 };
             case "library.scan":
-                return await Task.Run(_library.Scan);
+            {
+                var lib = await Task.Run(_library.Scan);
+                MapExtraHosts(); // a stick may have been plugged in since the last look
+                return lib;
+            }
+            case "clip.moveToLocation":
+            {
+                var ids = p["ids"]!.AsArray().Select(x => x!.GetValue<string>()).ToList();
+                int target = (int)Num("location");
+                var (moved, error) = await Task.Run(() => _library.MoveToLocation(ids, target));
+                return new { moved, error };
+            }
+            case "settings.addClipFolder":
+            {
+                using var dlg = new FolderBrowserDialog { UseDescriptionForTitle = true, Description = "Pick a folder with clips, for example on a USB stick" };
+                return dlg.ShowDialog(this) == DialogResult.OK ? dlg.SelectedPath : null;
+            }
 
             case "clip.move":
                 return _library.MoveClip(Str("id"), Str("folder"));
@@ -436,11 +478,13 @@ public sealed class LibraryWindow : Form
             {
                 var updated = p["settings"].Deserialize<AppSettings>(Json) ?? throw new InvalidOperationException("Invalid settings");
                 updated.Sanitize();
-                bool rootChanged = !string.Equals(Path.GetFullPath(updated.ClipsFolder), _library.Root, StringComparison.OrdinalIgnoreCase);
+                bool rootChanged = !string.Equals(Path.GetFullPath(updated.ClipsFolder), _library.Root, StringComparison.OrdinalIgnoreCase)
+                                   || !updated.ExtraClipFolders.SequenceEqual(_recorder.Settings.ExtraClipFolders, StringComparer.OrdinalIgnoreCase);
                 _applySettings(updated);
                 if (rootChanged)
                 {
-                    _library.SetRoot(updated.ClipsFolder);
+                    _library.SetRoots(updated.ClipsFolder, updated.ExtraClipFolders);
+                    _mappedExtras = "";
                     MapLibraryHosts();
                 }
                 return _recorder.Settings;

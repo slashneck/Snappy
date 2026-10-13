@@ -21,6 +21,7 @@ public sealed class AppSettings
     public int BufferSeconds { get; set; } = 300;
     public int ShortClipSeconds { get; set; } = 30;
     public string ClipsFolder { get; set; } = AppPaths.DefaultClipsDir;
+    public List<string> ExtraClipFolders { get; set; } = new(); // e.g. on a USB stick; shown whenever they're connected
 
     // Video
     public string MonitorDeviceName { get; set; } = ""; // e.g. \\.\DISPLAY1; empty = primary monitor
@@ -127,6 +128,7 @@ public sealed class AppSettings
         DesktopVolumePercent = Math.Clamp(DesktopVolumePercent, 0, 400);
         MicVolumePercent = Math.Clamp(MicVolumePercent, 0, 400);
         if (string.IsNullOrWhiteSpace(ClipsFolder)) ClipsFolder = AppPaths.DefaultClipsDir;
+        ExtraClipFolders = (ExtraClipFolders ?? new()).Where(p => !string.IsNullOrWhiteSpace(p)).Distinct(StringComparer.OrdinalIgnoreCase).Take(8).ToList();
         SaveClipHotkey ??= new HotkeySetting { Key = Keys.F10, Alt = true };
         SaveShortClipHotkey ??= new HotkeySetting { Key = Keys.None };
         MonitorDeviceName ??= "";

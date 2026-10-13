@@ -35,6 +35,7 @@ mutes the call and leaves the game.
 **A library that sorts itself.** Every clip goes into a folder for the game or app you were in. Favorites, search and
 hover previews are built in, and moving a clip in Snappy moves the file on disk. Clips from NVIDIA, Medal, Xbox Game
 Bar, OBS and others can be imported from their folder, sorted by game and marked with where they came from.
+Extra clip folders, like one on a USB stick, show up in the same library whenever the drive is connected.
 
 **Edit without another app.** Trim to the exact frame, crop, mute parts of a track (zoom in to mute a single word), grab
 a frame as a picture, or shrink a clip so it fits Discord's upload limit while staying at 60 fps. Several clips can be

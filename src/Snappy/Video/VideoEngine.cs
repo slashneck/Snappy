@@ -62,6 +62,13 @@ public sealed class VideoEngine : IDisposable
     private List<FfmpegArgs.CaptureMode> _modes = new();
     private string _modesFor = "";
     private int _modeIndex, _modeFailures;
+    // A slower way of recording is only kept for a while. Failures right after boot or on the lock screen say
+    // nothing about the PC, so the best way is tried again later, waiting longer each time it fails.
+    private static readonly long FirstRetryHns = Clock.SecondsToHns(5 * 60);
+    private long _demotedAtHns, _retryAfterHns = FirstRetryHns;
+    private int _workingIndex;
+    private volatile bool _tryBest;
+    private bool _retrying;
     private volatile bool _runGotFrames;
     private readonly ScreenNudge _nudge;
 
@@ -180,7 +187,19 @@ public sealed class VideoEngine : IDisposable
     /// <summary>Two starts in a row without a single frame: try the next way of recording. True when it switched.</summary>
     private bool NextModeAfterFailure()
     {
+        if (_retrying)
+        {
+            // The best way still doesn't work: straight back to the one that did, and wait longer next time.
+            _retrying = false;
+            _modeIndex = _workingIndex;
+            _modeFailures = 0;
+            _demotedAtHns = Clock.NowHns();
+            _retryAfterHns = Math.Min(_retryAfterHns * 3, Clock.SecondsToHns(3 * 3600));
+            Log.Info($"The faster way of recording still doesn't start, back to {_modes[_modeIndex].Label}");
+            return true;
+        }
         if (++_modeFailures < 2 || _modeIndex >= _modes.Count - 1) return false;
+        _demotedAtHns = Clock.NowHns();
         var failed = _modes[_modeIndex];
         var next = _modes[++_modeIndex];
         _modeFailures = 0;
@@ -207,6 +226,14 @@ public sealed class VideoEngine : IDisposable
             _modeIndex = 0;
             _modeFailures = 0;
             FallbackNote = null;
+        }
+        if (_tryBest)
+        {
+            _tryBest = false;
+            _retrying = true;
+            _workingIndex = _modeIndex;
+            _modeIndex = 0;
+            _modeFailures = 0;
         }
         var mode = _modes[_modeIndex];
         EncoderName = mode.Encoder;
@@ -244,7 +271,11 @@ public sealed class VideoEngine : IDisposable
         string arguments = FfmpegArgs.BuildCapture(_settings, Display, mode, studio, @"\\.\pipe\" + pipeName);
 #if DEBUG
         // Development only: SNAPPY_BREAK_CAPTURE=n makes the first n ways of recording fail, to test the fallback.
-        if (int.TryParse(Environment.GetEnvironmentVariable("SNAPPY_BREAK_CAPTURE"), out int broken) && _modeIndex < broken)
+        // SNAPPY_BREAK_SECONDS=s only breaks them during the first s seconds, like a PC that just booted.
+        bool stillBroken = !double.TryParse(Environment.GetEnvironmentVariable("SNAPPY_BREAK_SECONDS"), out double breakFor)
+                           || (DateTime.Now - Process.GetCurrentProcess().StartTime).TotalSeconds < breakFor;
+        if (double.TryParse(Environment.GetEnvironmentVariable("SNAPPY_RETRY_SECONDS"), out double retry)) _retryAfterHns = Math.Min(_retryAfterHns, Clock.SecondsToHns(retry));
+        if (int.TryParse(Environment.GetEnvironmentVariable("SNAPPY_BREAK_CAPTURE"), out int broken) && _modeIndex < broken && stillBroken)
             arguments = arguments.Replace("-c:v ", "-c:v broken_");
 #endif
         var psi = new ProcessStartInfo(AppPaths.FfmpegExe, arguments)
@@ -328,9 +359,24 @@ public sealed class VideoEngine : IDisposable
             demux.Feed(buf.AsSpan(0, n), now);
             session.PatPacket ??= demux.PatPacket;
             session.PmtPacket ??= demux.PmtPacket;
-            if (State != VideoEngineState.Recording && Ring.Count > 0) SetState(VideoEngineState.Recording);
+            if (State != VideoEngineState.Recording && Ring.Count > 0)
+            {
+                SetState(VideoEngineState.Recording);
+                if (_modeIndex == 0)
+                {
+                    if (_retrying) Log.Info("Recording the faster way again");
+                    _retrying = false;
+                    _retryAfterHns = FirstRetryHns;
+                    FallbackNote = null;
+                }
+            }
             if (now > nextEvict)
             {
+                if (_modeIndex > 0 && !_tryBest && now - _demotedAtHns > _retryAfterHns)
+                {
+                    _tryBest = true;
+                    RequestRestart($"trying {_modes[0].Label} again");
+                }
                 Ring.EvictOlderThan(now - _bufferHns);
                 PruneSessions();
                 nextEvict = now + Clock.HnsPerSecond;

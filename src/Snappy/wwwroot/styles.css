@@ -625,3 +625,7 @@ input[type="range"]::-webkit-slider-thumb { appearance: none; width: 14px; heigh
 .import-warn { color: #f3d08a !important; font-size: 12.5px; }
 .import-bar { height: 6px; margin: -6px 0 16px; border-radius: 3px; background: var(--surface-3); overflow: hidden; }
 .import-bar i { display: block; height: 100%; width: 0; background: var(--text); transition: width .2s; }
+
+/* ---------- extra clip folders ---------- */
+.row.sub-row { padding-left: 34px; }
+.row.sub-row .row-title { font-weight: 500; max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

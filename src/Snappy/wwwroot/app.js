@@ -332,7 +332,7 @@ function cardHtml(c) {
     <div class="card-body">
       <div class="card-text">
         <div class="card-title" title="${esc(c.title)}">${esc(c.title)}</div>
-        <div class="card-meta">${esc(fmtWhen(c.date))} · ${fmtSize(c.size)}${c.source ? ` · <span class="card-source" title="Imported from ${esc(c.source)}">${esc(c.source)}</span>` : ''}</div>
+        <div class="card-meta">${esc(fmtWhen(c.date))} · ${fmtSize(c.size)}${c.source ? ` · <span class="card-source" title="Imported from ${esc(c.source)}">${esc(c.source)}</span>` : ''}${c.location ? ` · <span class="card-source" title="Stored on ${esc(c.location)}">${esc(c.location)}</span>` : ''}</div>
       </div>
       <button class="card-more" data-action="more" title="More">${icon('more')}</button>
     </div>
@@ -447,7 +447,15 @@ function updateSelectionBar() {
 }
 
 // ----- clip actions -----
-function folderPicker(x, y, current, onPick) {
+function folderPicker(x, y, current, onPick, ids = null) {
+  const drives = (state.library.locations || []).filter((l) => l.connected);
+  const here = ids && ids.length === 1 ? byId(ids[0])?.location || null : undefined;
+  const driveItems = ids && drives.length ? [
+    { sep: true },
+    { heading: 'Move to drive' },
+    { label: 'Main clips folder', icon: 'folder', current: here === null, action: () => moveToLocation(ids, -1, 'the main clips folder') },
+    ...drives.map((l) => ({ label: l.label, icon: 'folder', current: here === l.label, action: () => moveToLocation(ids, l.index, l.label) })),
+  ] : [];
   showMenu(x, y, [
     { heading: 'Move to' },
     { label: 'Unsorted', icon: 'inbox', current: current === '', action: () => onPick('') },
@@ -459,7 +467,25 @@ function folderPicker(x, y, current, onPick) {
         if (name) onPick(name);
       },
     },
+    ...driveItems,
   ]);
+}
+
+async function moveToLocation(ids, location, label) {
+  const total = ids.reduce((n, id) => n + (byId(id)?.size || 0), 0);
+  toast({ title: `Moving ${ids.length === 1 ? 'clip' : `${ids.length} clips`} to ${label}`, sub: total > 200 * 1048576 ? `${fmtSize(total)}, this can take a moment on a USB stick` : '' });
+  Mascot.hold('move', 'working');
+  try {
+    const r = await snappy.call('clip.moveToLocation', { ids, location });
+    state.selected.clear();
+    await refreshLibrary();
+    if (r.error) toast({ kind: 'error', title: `Moved ${r.moved} of ${ids.length}`, sub: r.error, timeout: 9000 });
+    else toast({ kind: 'success', title: `Moved ${r.moved === 1 ? 'clip' : `${r.moved} clips`} to ${label}` });
+  } catch (err) {
+    toast({ kind: 'error', title: "Couldn't move", sub: err.message });
+  } finally {
+    Mascot.release('move');
+  }
 }
 
 function clipMenu(clip, x, y) {
@@ -467,7 +493,7 @@ function clipMenu(clip, x, y) {
     { label: 'Open', icon: 'play', action: () => openClip(clip) },
     { label: clip.favorite ? 'Remove from favorites' : 'Add to favorites', icon: 'star', action: () => setFavorite([clip.id], !clip.favorite) },
     { label: 'Rename', icon: 'edit', action: () => renameClip(clip) },
-    { label: 'Move to…', icon: 'folder', action: () => folderPicker(x, y, clip.folder, (f) => moveClips([clip.id], f)) },
+    { label: 'Move to…', icon: 'folder', action: () => folderPicker(x, y, clip.folder, (f) => moveClips([clip.id], f), [clip.id]) },
     { label: 'Copy file', icon: 'copy', action: () => copyClip(clip) },
     { label: 'Show in folder', icon: 'reveal', action: () => snappy.call('clip.reveal', { id: clip.id }) },
     { sep: true },
@@ -546,10 +572,13 @@ async function copyClip(clip) {
 
 async function deleteClips(ids) {
   const one = ids.length === 1;
+  const forGood = ids.filter((id) => byId(id)?.deletesForGood).length;
   const ok = await modal({
     title: one ? 'Delete this clip?' : `Delete ${ids.length} clips?`,
-    text: 'They go to the Recycle Bin, so you can still restore them.',
-    ok: 'Delete', danger: true,
+    text: forGood
+      ? `${forGood === ids.length ? (one ? 'It’s' : 'They’re') : `${forGood} of them are`} on a drive without a Recycle Bin, so ${forGood === 1 ? 'it' : 'they'} can’t be restored afterwards.`
+      : 'They go to the Recycle Bin, so you can still restore them.',
+    ok: forGood ? 'Delete for good' : 'Delete', danger: true,
   });
   if (!ok) return;
   const wasCurrent = state.current && ids.includes(state.current.id);
@@ -967,6 +996,14 @@ function renderSettings() {
     <div class="settings-group" id="set-clips"><h2>Clips</h2>
       ${row('Clips folder', 'Every game or app gets its own subfolder inside.',
         `<span class="path-display" title="${esc(s.clipsFolder)}">${esc(s.clipsFolder)}</span><button class="btn ghost" data-action="pickFolder">Change…</button>`)}
+      ${row('More clip folders', 'Clips in these folders show up in your library whenever the drive is connected, like a USB stick. New clips still go to the folder above.',
+        `<button class="btn ghost" data-action="addClipFolder">Add folder…</button>`)}
+      ${(s.extraClipFolders || []).map((path, i) => {
+        const loc = (state.library?.locations || []).find((l) => l.index === i);
+        const status = loc?.connected ? `Connected · ${loc.count} clip${loc.count === 1 ? '' : 's'} · ${fmtSize(loc.size)}` : 'Not connected right now';
+        return `<div class="row sub-row"><div class="row-text"><div class="row-title path-display" title="${esc(path)}">${esc(path)}</div><div class="row-desc">${status}</div></div>
+          <div class="row-control"><button class="btn ghost" data-action="removeClipFolder" data-index="${i}">Remove</button></div></div>`;
+      }).join('')}
       ${row('Screenshots folder', 'Screenshots are sorted into a subfolder per game or app, like clips.',
         `<span class="path-display" title="${esc(s.screenshotsFolder)}">${esc(s.screenshotsFolder)}</span><button class="btn ghost" data-action="pickScreenshots">Change…</button>`)}
       ${row('Storage limit', 'When the clips folder grows past this size, the oldest clips that aren’t favorites go to the Recycle Bin.',
@@ -1259,7 +1296,7 @@ function bind() {
   $('#selectAllBtn').addEventListener('click', () => { visibleClips().forEach((c) => state.selected.add(c.id)); renderGrid(); });
   $('#bulkMoveBtn').addEventListener('click', (e) => {
     const r = e.currentTarget.getBoundingClientRect();
-    folderPicker(r.left, r.bottom + 6, null, (f) => moveClips([...state.selected], f));
+    folderPicker(r.left, r.bottom + 6, null, (f) => moveClips([...state.selected], f), [...state.selected]);
   });
   $('#bulkDeleteBtn').addEventListener('click', () => deleteClips([...state.selected]));
   $('#bulkFavBtn').addEventListener('click', () => setFavorite([...state.selected], true));
@@ -1497,6 +1534,18 @@ function bind() {
         state.folder = '*';
         await refreshLibrary();
       }
+    } else if (action === 'addClipFolder') {
+      const folder = await snappy.call('settings.addClipFolder');
+      if (folder) {
+        await saveSettings((s) => { s.extraClipFolders = [...(s.extraClipFolders || []), folder]; });
+        await refreshLibrary();
+        if (state.view === 'settings') renderSettings();
+      }
+    } else if (action === 'removeClipFolder') {
+      const i = Number(e.target.closest('[data-index]').dataset.index);
+      await saveSettings((s) => { s.extraClipFolders = (s.extraClipFolders || []).filter((_, k) => k !== i); });
+      await refreshLibrary();
+      toast({ title: 'Folder removed from the library', sub: 'The clips in it are still on the drive.' });
     } else if (action === 'pickScreenshots') {
       const folder = await snappy.call('settings.pickFolder');
       if (folder) await saveSettings((s) => { s.screenshotsFolder = folder; });
