@@ -80,7 +80,11 @@ public static class EditExporter
         await RunAsync(args, duration, output, progress, ct);
 
         ClipMeta.CopyTrimmed(input, output, start, end);
-        if (!spec.Replace) return output;
+        if (!spec.Replace)
+        {
+            KeepDate(input, output);
+            return output;
+        }
 
         DateTime created = File.GetCreationTimeUtc(input);
         ShellOps.SendToRecycleBin(input);
@@ -89,6 +93,23 @@ public static class EditExporter
         ClipMeta.MoveWith(output, input);
         File.SetCreationTimeUtc(input, created);
         return input;
+    }
+
+    /// <summary>
+    /// An edited copy keeps the date of the clip it came from, so cutting an old clip doesn't make it look new and it
+    /// stays next to the original in the library.
+    /// </summary>
+    internal static void KeepDate(string source, string copy)
+    {
+        try
+        {
+            File.SetCreationTimeUtc(copy, File.GetCreationTimeUtc(source));
+            File.SetLastWriteTimeUtc(copy, File.GetLastWriteTimeUtc(source));
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"Couldn't give {copy} the original's date: {ex.Message}");
+        }
     }
 
     internal static void AddAudioArgs(List<string> args, List<(string Map, string Title)> audio, bool encode)

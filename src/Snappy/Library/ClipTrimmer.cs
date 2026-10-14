@@ -92,7 +92,11 @@ public static class ClipTrimmer
         }
         progress?.Report(1);
 
-        if (!replaceOriginal) return output;
+        if (!replaceOriginal)
+        {
+            EditExporter.KeepDate(input, output);
+            return output;
+        }
 
         // Replace: the untrimmed original goes to the Recycle Bin (so it can be restored), the trim takes its name.
         DateTime created = File.GetCreationTimeUtc(input);

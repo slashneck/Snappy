@@ -40,7 +40,11 @@ public static class ShrinkExporter
             var plan = PlanFor(videoBitrate, encoder, edits.Crop?.Width ?? info.Width, edits.Crop?.Height ?? info.Height, info.Fps);
             await EncodeAsync(input, info, edits, start, duration, videoBitrate, plan, encoder, output, progress, ct);
             long size = new FileInfo(output).Length;
-            if (size <= limitBytes) return output;
+            if (size <= limitBytes)
+            {
+                EditExporter.KeepDate(input, output);
+                return output;
+            }
             Log.Info($"Shrink attempt {attempt + 1} came out at {size / 1048576.0:0.00} MB, retrying lower");
             videoBitrate = (long)(videoBitrate * limitBytes / (double)size * 0.92);
         }
