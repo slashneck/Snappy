@@ -50,6 +50,7 @@ public sealed class LibraryWindow : Form
     private readonly System.Windows.Forms.Timer _inputTimer = new() { Interval = 33 };
     private StudioPreview? _studioPreview;
     private CancellationTokenSource? _import;
+    private CancellationTokenSource? _moveAll;
     private HotkeyListener? _snapHotkey;
     private string _lastInputState = "";
     private bool _ready;
@@ -270,6 +271,45 @@ public sealed class LibraryWindow : Form
                 var (moved, error) = await Task.Run(() => _library.MoveToLocation(ids, target));
                 return new { moved, error };
             }
+            case "library.moveAll":
+            {
+                if (_moveAll != null) throw new InvalidOperationException("Clips are already being moved.");
+                int target = (int)Num("location");
+                var clips = _library.MainClips();
+                long bytes = clips.Sum(c => c.Size);
+                var extra = _library.ConnectedExtras().FirstOrDefault(e => e.Index == target);
+                if (extra.Path == null) throw new InvalidOperationException("That folder isn't connected.");
+                long free = LibraryService.FreeOn(extra.Path);
+                if (bytes > free - (256L << 20))
+                    throw new InvalidOperationException($"That needs {bytes / 1073741824.0:0.#} GB, but only {free / 1073741824.0:0.#} GB is free there.");
+                _moveAll = CancellationTokenSource.CreateLinkedTokenSource(_closing.Token);
+                var token = _moveAll.Token;
+                _ = Task.Run(() =>
+                {
+                    int moved = 0;
+                    string? error = null;
+                    long done = 0, lastPost = 0;
+                    foreach (var (id, size) in clips)
+                    {
+                        if (token.IsCancellationRequested) break;
+                        var (n, err) = _library.MoveToLocation(new[] { id }, target);
+                        moved += n;
+                        done += size;
+                        if (err != null) { error = err; break; }
+                        if (Environment.TickCount64 - lastPost > 300)
+                        {
+                            lastPost = Environment.TickCount64;
+                            PostEvent("moveAllProgress", new { moved, total = clips.Count, done, bytes });
+                        }
+                    }
+                    _moveAll = null;
+                    PostEvent("moveAllDone", new { moved, total = clips.Count, error, cancelled = token.IsCancellationRequested });
+                });
+                return new { total = clips.Count, bytes };
+            }
+            case "library.moveAllCancel":
+                _moveAll?.Cancel();
+                return true;
             case "settings.addClipFolder":
             {
                 using var dlg = new FolderBrowserDialog { UseDescriptionForTitle = true, Description = "Pick a folder with clips, for example on a USB stick" };

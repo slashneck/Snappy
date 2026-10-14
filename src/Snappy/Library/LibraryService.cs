@@ -10,11 +10,11 @@ public sealed record ClipDto(string Id, string Title, string Folder, string File
     string? Location, bool DeletesForGood);
 
 /// <summary>An extra clips folder from Settings, e.g. on a USB stick, and whether it can be reached right now.</summary>
-public sealed record LocationDto(int Index, string Path, string Label, bool Connected, int Count, long Size);
+public sealed record LocationDto(int Index, string Path, string Label, bool Connected, int Count, long Size, long Free);
 
 public sealed record FolderDto(string Name, int Count, long Size);
 
-public sealed record LibraryDto(string Root, List<FolderDto> Folders, List<ClipDto> Clips, List<LocationDto> Locations);
+public sealed record LibraryDto(string Root, List<FolderDto> Folders, List<ClipDto> Clips, List<LocationDto> Locations, long RootSize, long RootFree);
 
 /// <summary>
 /// The clips folder IS the library: game/app subfolders are the categories, so anything you do in Snappy
@@ -104,6 +104,25 @@ public sealed class LibraryService : IDisposable
         }
     }
 
+    public static long FreeOn(string path)
+    {
+        try { return new DriveInfo(System.IO.Path.GetPathRoot(System.IO.Path.GetFullPath(path))!).AvailableFreeSpace; }
+        catch { return 0; }
+    }
+
+    /// <summary>Every clip in the main folder, for moving the whole lot to a backup drive.</summary>
+    public List<(string Id, long Size)> MainClips()
+    {
+        var list = new List<(string, long)>();
+        foreach (var f in ListVideos(Root)) list.Add((f.Name, f.Length));
+        foreach (var dir in new DirectoryInfo(Root).EnumerateDirectories())
+        {
+            if (dir.Name.StartsWith('.') || (dir.Attributes & FileAttributes.Hidden) != 0) continue;
+            foreach (var f in ListVideos(dir.FullName)) list.Add(($"{dir.Name}/{f.Name}", f.Length));
+        }
+        return list;
+    }
+
     /// <summary>Removable drives and network folders have no Recycle Bin: deleting there can't be undone.</summary>
     private static bool DeletesForGood(string path)
     {
@@ -150,16 +169,17 @@ public sealed class LibraryService : IDisposable
                 Log.Warn($"Couldn't read the clips on {basePath}: {ex.Message}"); // pulled out mid scan
             }
             if (index >= 0)
-                locations.Add(new LocationDto(index, basePath, LabelFor(basePath), true, clips.Count - before, clips.Skip(before).Sum(c => c.Size)));
+                locations.Add(new LocationDto(index, basePath, LabelFor(basePath), true, clips.Count - before, clips.Skip(before).Sum(c => c.Size), FreeOn(basePath)));
         }
         for (int i = 0; i < _extra.Count; i++)
-            if (!locations.Any(l => l.Index == i)) locations.Add(new LocationDto(i, _extra[i], LabelFor(_extra[i]), false, 0, 0));
+            if (!locations.Any(l => l.Index == i)) locations.Add(new LocationDto(i, _extra[i], LabelFor(_extra[i]), false, 0, 0, 0));
         folders.AddRange(merged.Values.Select(m => new FolderDto(m.Name, m.Count, m.Size)));
 
         if (_cacheDirty) SaveCache();
         folders.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
         locations.Sort((a, b) => a.Index.CompareTo(b.Index));
-        return new LibraryDto(Root, folders, clips, locations);
+        long rootSize = clips.Where(c => c.Location == null).Sum(c => c.Size);
+        return new LibraryDto(Root, folders, clips, locations, rootSize, FreeOn(Root));
     }
 
     private static IEnumerable<FileInfo> ListVideos(string dir) =>

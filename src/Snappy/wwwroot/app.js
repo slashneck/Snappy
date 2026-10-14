@@ -48,6 +48,7 @@ function fmtTime(sec) {
 function fmtSize(b) {
   if (b >= 1e9) return `${(b / 1073741824).toFixed(1)} GB`;
   if (b >= 1048576) return `${Math.round(b / 1048576)} MB`;
+  if (!b) return '0 KB';
   return `${Math.max(1, Math.round(b / 1024))} KB`;
 }
 const fmtSeconds = (s) => (s < 60 ? `${s}s` : s % 60 === 0 ? `${s / 60} min` : `${Math.floor(s / 60)}m ${s % 60}s`);
@@ -274,6 +275,21 @@ snappy.on('importProgress', (p) => {
   if (fill) fill.style.width = `${p.total ? (p.done / p.total) * 100 : 0}%`;
 });
 snappy.on('importDone', finishImport);
+
+snappy.on('moveAllProgress', (p) => {
+  if (!state.moveAll) return;
+  state.moveAll.text = `Moving ${p.moved} of ${p.total} · ${fmtSize(p.done)} of ${fmtSize(p.bytes)}`;
+  const hint = document.querySelector('#settingsForm [data-action="moveAllStop"]')?.previousElementSibling;
+  if (hint) hint.textContent = state.moveAll.text;
+});
+snappy.on('moveAllDone', async (r) => {
+  state.moveAll = null;
+  Mascot.release('moveAll');
+  await refreshLibrary();
+  if (state.view === 'settings') renderSettings();
+  if (r.error) toast({ kind: 'error', title: `Moved ${r.moved} of ${r.total} clips`, sub: r.error, timeout: 10000 });
+  else toast({ kind: 'success', title: r.cancelled ? `Stopped after ${r.moved} clips` : `Moved all ${r.moved} clips`, sub: 'They’re still in your library whenever the drive is connected.' });
+});
 
 async function refreshLibrary() {
   try { setLibrary(await snappy.call('library.scan')); }
@@ -994,15 +1010,20 @@ function renderSettings() {
     </div>
 
     <div class="settings-group" id="set-clips"><h2>Clips</h2>
-      ${row('Clips folder', 'Every game or app gets its own subfolder inside.',
+      ${row('Clips folder', 'Every game or app gets its own subfolder inside.' + (state.library ? ` Your clips here use <strong>${fmtSize(state.library.rootSize || 0)}</strong>, ${fmtSize(state.library.rootFree || 0)} free on this drive.` : ''),
         `<span class="path-display" title="${esc(s.clipsFolder)}">${esc(s.clipsFolder)}</span><button class="btn ghost" data-action="pickFolder">Change…</button>`)}
       ${row('More clip folders', 'Clips in these folders show up in your library whenever the drive is connected, like a USB stick. New clips still go to the folder above.',
         `<button class="btn ghost" data-action="addClipFolder">Add folder…</button>`)}
       ${(s.extraClipFolders || []).map((path, i) => {
         const loc = (state.library?.locations || []).find((l) => l.index === i);
-        const status = loc?.connected ? `Connected · ${loc.count} clip${loc.count === 1 ? '' : 's'} · ${fmtSize(loc.size)}` : 'Not connected right now';
+        const status = loc?.connected ? `${esc(loc.label)} · ${loc.count} clip${loc.count === 1 ? '' : 's'} · ${fmtSize(loc.size)} used · ${fmtSize(loc.free)} free` : 'Not connected right now';
+        const mainCount = (state.library?.clips || []).filter((c) => !c.location).length;
+        const moving = state.moveAll && state.moveAll.location === i;
+        const move = moving
+          ? `<span class="hint">${state.moveAll.text}</span><button class="btn ghost" data-action="moveAllStop">Stop</button>`
+          : loc?.connected && mainCount && !state.moveAll ? `<button class="btn" data-action="moveAllHere" data-index="${i}" title="Moves every clip from your main folder here, sorted into the same game folders">Move all clips here</button>` : '';
         return `<div class="row sub-row"><div class="row-text"><div class="row-title path-display" title="${esc(path)}">${esc(path)}</div><div class="row-desc">${status}</div></div>
-          <div class="row-control"><button class="btn ghost" data-action="removeClipFolder" data-index="${i}">Remove</button></div></div>`;
+          <div class="row-control">${move}<button class="btn ghost" data-action="removeClipFolder" data-index="${i}">Remove</button></div></div>`;
       }).join('')}
       ${row('Screenshots folder', 'Screenshots are sorted into a subfolder per game or app, like clips.',
         `<span class="path-display" title="${esc(s.screenshotsFolder)}">${esc(s.screenshotsFolder)}</span><button class="btn ghost" data-action="pickScreenshots">Change…</button>`)}
@@ -1541,6 +1562,25 @@ function bind() {
         await refreshLibrary();
         if (state.view === 'settings') renderSettings();
       }
+    } else if (action === 'moveAllHere') {
+      const i = Number(e.target.closest('[data-index]').dataset.index);
+      const loc = state.library.locations.find((l) => l.index === i);
+      const ok = await modal({
+        title: `Move all clips to ${loc.label}?`,
+        text: `${fmtSize(state.library.rootSize)} of clips move from your main folder into the same game folders there. Favorites and markers come along. New clips keep going to your main folder.`,
+        ok: 'Move all',
+      });
+      if (!ok) return;
+      try {
+        const r = await snappy.call('library.moveAll', { location: i });
+        state.moveAll = { location: i, text: `Starting… (${r.total} clips)` };
+        Mascot.hold('moveAll', 'working');
+        renderSettings();
+      } catch (err) { toast({ kind: 'error', title: 'Couldn’t move the clips', sub: err.message, timeout: 9000 }); }
+    } else if (action === 'moveAllStop') {
+      snappy.call('library.moveAllCancel').catch(() => {});
+      if (state.moveAll) state.moveAll.text = 'Stopping after this clip…';
+      renderSettings();
     } else if (action === 'removeClipFolder') {
       const i = Number(e.target.closest('[data-index]').dataset.index);
       await saveSettings((s) => { s.extraClipFolders = (s.extraClipFolders || []).filter((_, k) => k !== i); });
