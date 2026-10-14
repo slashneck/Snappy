@@ -53,7 +53,7 @@ public static class ClipTrimmer
             if (encoder.StartsWith("hevc", StringComparison.Ordinal)) args.AddRange(new[] { "-tag:v", "hvc1" });
             args.AddRange(new[] { "-c:a", "aac", "-b:a", "192k" });
         }
-        args.AddRange(new[] { "-movflags", "+faststart", "-f", "mp4", output });
+        args.AddRange(new[] { "-map_metadata", "0", "-movflags", "+faststart", "-f", "mp4", output });
 
         var psi = new ProcessStartInfo(AppPaths.FfmpegExe)
         {
@@ -99,10 +99,11 @@ public static class ClipTrimmer
         }
 
         // Replace: the untrimmed original goes to the Recycle Bin (so it can be restored), the trim takes its name.
-        DateTime created = File.GetCreationTimeUtc(input);
+        DateTime created = File.GetCreationTimeUtc(input), written = File.GetLastWriteTimeUtc(input);
         ShellOps.SendToRecycleBin(input);
         File.Move(output, input);
         File.SetCreationTimeUtc(input, created);
+        File.SetLastWriteTimeUtc(input, written); // both dates, or a copied clip loses its real one
         return input;
     }
 

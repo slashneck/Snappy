@@ -124,7 +124,7 @@ public static class ShrinkExporter
             else args.AddRange(EditExporter.VideoEncodeArgs(encoder, videoBitrate, fixedBitrate: true));
             if (audioMap != null)
                 args.AddRange(new[] { "-c:a", "aac", "-b:a", AudioBitrate.ToString(CultureInfo.InvariantCulture), "-ac", "2" });
-            args.AddRange(new[] { "-movflags", "+faststart", "-f", "mp4", output });
+            args.AddRange(new[] { "-map_metadata", "0", "-movflags", "+faststart", "-f", "mp4", output });
             await EditExporter.RunAsync(args, duration, output, plan.TwoPass ? Scaled(progress, 0.45, 1) : progress, ct);
         }
         finally

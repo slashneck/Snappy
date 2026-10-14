@@ -74,7 +74,7 @@ public static class EditExporter
             args.AddRange(new[] { "-c:v", "copy", "-avoid_negative_ts", "make_zero" });
         }
         AddAudioArgs(args, audio, audioEdited);
-        args.AddRange(new[] { "-movflags", "+faststart", "-f", "mp4", output });
+        args.AddRange(new[] { "-map_metadata", "0", "-movflags", "+faststart", "-f", "mp4", output });
 
         Log.Info($"Exporting edit of {input}: {F(start)}..{F(end)} crop={crop != null} audioEdited={audioEdited} encodeVideo={encodeVideo}");
         await RunAsync(args, duration, output, progress, ct);
@@ -86,12 +86,13 @@ public static class EditExporter
             return output;
         }
 
-        DateTime created = File.GetCreationTimeUtc(input);
+        DateTime created = File.GetCreationTimeUtc(input), written = File.GetLastWriteTimeUtc(input);
         ShellOps.SendToRecycleBin(input);
         ClipMeta.RecycleWith(input);
         File.Move(output, input);
         ClipMeta.MoveWith(output, input);
         File.SetCreationTimeUtc(input, created);
+        File.SetLastWriteTimeUtc(input, written); // both dates, or a copied clip loses its real one
         return input;
     }
 
