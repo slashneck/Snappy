@@ -64,6 +64,17 @@ public sealed class AppSettings
     public bool PlaySoundOnSave { get; set; } = true;
     public string TrimMode { get; set; } = "fast"; // fast (lossless, keyframe) | precise (re-encode)
     public bool ShowNotificationOnSave { get; set; } = true;
+    public bool MascotTalks { get; set; } = true;  // Snappy's speech bubbles in the app window
+    public bool MascotSounds { get; set; } = true; // the blips while she talks
+    public bool MascotAnimations { get; set; } = true;
+    public bool MascotEvents { get; set; } = true; // her little adventures and stories now and then
+    public string? LastSeenVersion { get; set; }  // the last version that ran with these settings
+    public bool EarlyBird { get; set; }           // used Snappy before the events update: gets a welcome-back story
+    public bool EarlyBirdSeen { get; set; }       // that story came up once (watched or skipped): she talks from then on
+    public string? WhatsNewFor { get; set; }      // a version whose patch notes haven't been shown yet
+    public string? MascotOutfit { get; set; }     // what she wears every day, once she has worn it in an event
+    public bool ShinySeen { get; set; }           // the golden pop-up showed up at least once
+    public int SoundVolumePercent { get; set; } = 100; // her voice and the clip-saved sound
     public bool StartWithWindows { get; set; } = true;
 
     [JsonIgnore]

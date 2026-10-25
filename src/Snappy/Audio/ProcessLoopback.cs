@@ -27,15 +27,18 @@ internal static class ProcessLoopback
 
     public static bool Supported { get; } = Environment.OSVersion.Version.Build >= 20348;
 
-    /// <summary>Opens an audio client that hears one program and everything it started.</summary>
-    public static IAudioClient Open(int processId)
+    /// <summary>
+    /// Opens an audio client that hears one program and everything it started, or with <paramref name="exclude"/>,
+    /// everything on the PC except that program.
+    /// </summary>
+    public static IAudioClient Open(int processId, bool exclude = false)
     {
         int size = Marshal.SizeOf<ActivationParams>();
         IntPtr blob = Marshal.AllocHGlobal(size);
         IntPtr variant = Marshal.AllocHGlobal(Marshal.SizeOf<PropVariant>());
         try
         {
-            Marshal.StructureToPtr(new ActivationParams { Type = 1, ProcessId = (uint)processId, Mode = 0 }, blob, false);
+            Marshal.StructureToPtr(new ActivationParams { Type = 1, ProcessId = (uint)processId, Mode = exclude ? 1u : 0u }, blob, false);
             Marshal.StructureToPtr(new PropVariant { vt = VT_BLOB, pointer = size, pointer2 = blob }, variant, false);
 
             var handler = new Completion();
@@ -184,7 +187,7 @@ internal static class ProcessLoopback
     {
         public uint Type;      // 1 = process loopback
         public uint ProcessId;
-        public uint Mode;      // 0 = this program and the ones it started
+        public uint Mode;      // 0 = this program and the ones it started, 1 = everything except them
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]

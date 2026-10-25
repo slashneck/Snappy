@@ -49,6 +49,17 @@
     return { width: cols * size, height: Math.ceil(frames / cols) * size };
   };
 
+  // One still per face, side by side: [name, eyes, worried] each.
+  window.renderFaces = async ({ faces, size, cols, lx = 0, ly = 0, t = 600 }) => {
+    const els = build(faces.length, size, cols, [], null);
+    Mascot.freeze('idle', 0, lx, ly);
+    els.forEach(({ m }, i) => { m.dataset.eyes = faces[i][1]; m.dataset.worried = faces[i][2] ? '1' : ''; });
+    await frame();
+    els.forEach(({ m }) => { for (const a of m.getAnimations({ subtree: true })) { a.pause(); a.currentTime = t; } });
+    await frame();
+    return { width: cols * size, height: size };
+  };
+
   // Single still (app / tray icons), optional status badge in the corner.
   window.renderIcon = async ({ mood, size, classes = [], viewBox = null, lx = 0, ly = 0, t = 0, badge = null }) => {
     const [{ cell, m }] = build(1, size, 1, classes, viewBox);

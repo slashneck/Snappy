@@ -58,7 +58,7 @@ public sealed class VideoEngine : IDisposable
     private volatile StudioScene? _studio;
     private bool _runUsedStudio;
     private int _studioFailures;
-    private readonly string _preferredEncoder;
+    private volatile string _preferredEncoder;
     private List<FfmpegArgs.CaptureMode> _modes = new();
     private string _modesFor = "";
     private int _modeIndex, _modeFailures;
@@ -106,6 +106,47 @@ public sealed class VideoEngine : IDisposable
     }
 
     public void Start() => _supervisor.Start();
+
+    /// <summary>Switches to another encoder, e.g. once the graphics card's works again. The replay buffer is kept.</summary>
+    public void ChangeEncoder(string encoder)
+    {
+        _preferredEncoder = encoder;
+        _modesFor = "";
+        RequestRestart($"switching to {encoder}");
+    }
+
+    // Recording health. A frame that repeats the one before encodes to almost nothing, so a tiny frame between two
+    // normal ones during motion is a repeat: the game or the capture didn't deliver a new picture in time.
+    private int _sizeBefore, _sizeLast, _framesSeen, _repeatsSeen;
+    private long _healthSince;
+
+    /// <summary>Repeated frames out of all frames since the last report, for the log and the status.</summary>
+    public (int Frames, int Repeats) LastHealth { get; private set; }
+
+    private void CountFrame(int size)
+    {
+        int moving = (int)(_settings.BitrateMbps * 1_000_000 / 8.0 / Math.Max(1, _settings.Fps) * 0.35);
+        int smaller = Math.Min(_sizeBefore, size);
+        if (_sizeLast > 0 && smaller > moving && _sizeLast * 10 < smaller) _repeatsSeen++;
+        _sizeBefore = _sizeLast;
+        _sizeLast = size;
+        _framesSeen++;
+    }
+
+    private void ReportHealth(long now)
+    {
+        if (_healthSince == 0) { _healthSince = now; return; }
+        if (now - _healthSince < Clock.SecondsToHns(60)) return;
+        LastHealth = (_framesSeen, _repeatsSeen);
+        if (_framesSeen > 0)
+        {
+            string line = $"Recording health: {_framesSeen} frames in the last minute, {_repeatsSeen} repeated during motion";
+            if (_repeatsSeen * 100 > _framesSeen) Log.Warn(line + $" ({_repeatsSeen * 100.0 / _framesSeen:0.#}%, clips will look choppy) with {EncoderName}");
+            else Log.Info(line);
+        }
+        _framesSeen = _repeatsSeen = 0;
+        _healthSince = now;
+    }
 
     public void RequestRestart(string reason)
     {
@@ -165,7 +206,9 @@ public sealed class VideoEngine : IDisposable
             if (_stop) break;
 
             bool healthy = Clock.NowHns() - started > Clock.SecondsToHns(30);
-            if (healthy || _restartRequested) backoffMs = 1000;
+            // A run that recorded something only hit a hiccup (a game hogging the PC for a moment): come straight back,
+            // every second spent waiting is missing from the replay.
+            if (healthy || _restartRequested || _runGotFrames) backoffMs = 1000;
             if (_runUsedStudio && !healthy && !_restartRequested && ++_studioFailures >= 2)
             {
                 StudioError = LastError ?? "FFmpeg could not start with the layers";
@@ -180,7 +223,7 @@ public sealed class VideoEngine : IDisposable
             SetState(_restartRequested ? VideoEngineState.Restarting : VideoEngineState.Failed);
             _wake.Reset();
             _wake.Wait(_restartRequested ? 300 : backoffMs);
-            backoffMs = Math.Min(backoffMs * 2, 10_000);
+            backoffMs = Math.Min(backoffMs * 2, 4_000);
         }
     }
 
@@ -240,14 +283,11 @@ public sealed class VideoEngine : IDisposable
         _runGotFrames = false;
 
         int sessionId = Interlocked.Increment(ref _sessionCounter);
-        CaptureSession? current = null;
         StudioPipeline? studio = null;
         if (_studio is { IsActive: true } scene && StudioError == null)
         {
             var (outW, outH) = FfmpegArgs.OutputSize(_settings, Display);
-            // Layer frames are timed against the first captured frame, which is only known once output arrives.
-            studio = StudioPipeline.TryCreate(scene, outW, outH, _settings.Fps, sessionId,
-                () => current?.OffsetHns ?? long.MaxValue, out string? studioError);
+            studio = StudioPipeline.TryCreate(scene, outW, outH, _settings.Fps, sessionId, out string? studioError);
             if (studioError != null) StudioError = studioError;
         }
         using var studioScope = studio;
@@ -260,7 +300,6 @@ public sealed class VideoEngine : IDisposable
             CodecKey = $"{mode.Encoder}|{(FfmpegArgs.FramesStayOnGpu(_settings, Display, mode, studio != null) ? "gpu" : "memory")}|{Display.Width}x{Display.Height}|{_settings.OutputHeight}|{_settings.Fps}",
             FrameDurationHns = Clock.HnsPerSecond / _settings.Fps,
         };
-        current = session;
         lock (_sessionsGate) _sessions[session.Id] = session;
 
         // FFmpeg writes into a pipe with room for a few seconds of video. The default pipe holds 4 KB, so FFmpeg had to
@@ -293,9 +332,12 @@ public sealed class VideoEngine : IDisposable
         ChildProcessJob.Attach(proc);
         // Above normal only while FFmpeg just passes textures along. When it copies frames or encodes on the CPU it
         // does real work, and above normal would take that time straight from the game.
+        // Below normal was tried for the processor encoder and made things far worse: under a busy game it fell so far
+        // behind that clips turned into slideshows, while the game didn't gain a single frame. Normal keeps both smooth.
         var priority = FfmpegArgs.FramesStayOnGpu(_settings, Display, mode, studio != null) ? ProcessPriorityClass.AboveNormal
-            : mode.Encoder == "libx264" ? ProcessPriorityClass.BelowNormal : ProcessPriorityClass.Normal;
+            : ProcessPriorityClass.Normal;
         try { proc.PriorityClass = priority; } catch { }
+        GpuPriority.Raise(proc);
 
         lock (_stderrTail) _stderrTail.Clear();
         proc.ErrorDataReceived += (_, e) =>
@@ -315,6 +357,7 @@ public sealed class VideoEngine : IDisposable
             session.Observe(arrival, CaptureSession.Pts90kToHns(pts90k));
             long host = session.HostTimeHns(pts90k);
             Ring.Append(packets, host, session.FrameDurationHns, key ? RingArena.FlagKeyframe : 0, session.Id, pts90k);
+            if (!key) CountFrame(packets.Length);
         });
 
         Interlocked.Exchange(ref _lastDataHns, Clock.NowHns());
@@ -327,8 +370,11 @@ public sealed class VideoEngine : IDisposable
         Thread.CurrentThread.Priority = ThreadPriority.AboveNormal;
 
         var connecting = pipe.WaitForConnectionAsync();
-        while (!connecting.Wait(100))
+        while (true)
         {
+            // FFmpeg dying while it connects closes the pipe under us; that's handled below like any failed start.
+            try { if (connecting.Wait(100)) break; }
+            catch (AggregateException) { break; }
             if (proc.HasExited || _stop || _restartRequested) break;
         }
         if (!pipe.IsConnected)
@@ -372,6 +418,7 @@ public sealed class VideoEngine : IDisposable
             }
             if (now > nextEvict)
             {
+                ReportHealth(now);
                 if (_modeIndex > 0 && !_tryBest && now - _demotedAtHns > _retryAfterHns)
                 {
                     _tryBest = true;

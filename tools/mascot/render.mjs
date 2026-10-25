@@ -72,7 +72,7 @@ for (const [state, cfg] of Object.entries(trayStates)) {
 }
 
 // Overlay animation strips (30 fps, 128 px cells)
-const sheets = { clip: ['clipping', 26], working: ['working', 33], happy: ['happy', 33], error: ['error', 39] };
+const sheets = { clip: ['clipping', 27], working: ['working', 36], happy: ['happy', 35], error: ['error', 39] };
 const meta = {};
 for (const [name, [mood, frames]] of Object.entries(sheets)) {
   const size = 128, cols = 13;
@@ -80,6 +80,14 @@ for (const [name, [mood, frames]] of Object.entries(sheets)) {
   await capture(`overlay-${name}`, cols * size, rows * size,
     `renderSheet({ mood: '${mood}', size: ${size}, frames: ${frames}, fps: 30, cols: ${cols}, lx: 0, ly: 0.15 })`);
   meta[name] = { frames, size, cols, fps: 30 };
+}
+// Her faces, a still each, for when she's out on the desktop (DesktopSnappy.Faces lists them in the same order)
+const FACES = [['open', 'open'], ['happy', 'happy'], ['shock', 'shock'], ['angry', 'angry'], ['joy', 'joy'], ['smug', 'smug'], ['sad', 'sad'],
+  ['wink', 'wink'], ['love', 'heart'], ['ew', 'ew'], ['dizzy', 'dizzy'], ['wince', 'wince'], ['worried', 'open', true]];
+{
+  const size = 128, cols = FACES.length;
+  await capture('overlay-faces', cols * size, size, `renderFaces({ faces: ${JSON.stringify(FACES)}, size: ${size}, cols: ${cols}, ly: 0.15 })`);
+  meta.faces = { frames: FACES.length, size, cols, fps: 1 };
 }
 writeFileSync(join(out, 'overlay.json'), JSON.stringify(meta, null, 2));
 

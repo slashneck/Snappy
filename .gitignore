@@ -6,3 +6,6 @@ dist/
 
 # FFmpeg is downloaded by build-release.ps1 (the exe is larger than GitHub allows)
 ffmpeg/
+
+drafts/
+HANDOFF.md

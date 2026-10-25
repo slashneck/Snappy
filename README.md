@@ -44,6 +44,11 @@ joined into a montage.
 **Little things.** Screenshots with a hotkey, sorted per game like clips. Mark a moment while you play and find it again
 on the clip's timeline. An optional storage limit sends your oldest clips to the Recycle Bin, and never your favorites.
 
+**Snappy herself.** The little camera in the corner reacts to what you do and, every few days at most, gets up to
+something: a short adventure, a whole story, sometimes a game. Watch one to the end and it becomes an achievement you can
+see again. She has a voice, outfits and a few days of the year she likes, and none of it ever ends up in your clips. If
+you'd rather have a quiet tool, "Events and surprises" and "Talks to you" switch it off under Settings, Snappy.
+
 ## Studio
 
 Put pictures, GIFs, your facecam or an input overlay into your clips: the keys you pick, a whole keyboard, or your

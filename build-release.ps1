@@ -11,8 +11,10 @@ Set-Location $PSScriptRoot
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
-$ffmpegVersion = '9.0.1'
-$ffmpegSha256 = 'fec81ae03971d9dd4be3ebe02e263bd2ec1d789483f931bdba5f5715e65da2e9'
+# 8.1.1 talks to the NVIDIA encoder through API 13.0 (drivers from early 2025 on). 9.x builds need driver 610 or
+# newer, which left everyone on an older driver recording on the CPU.
+$ffmpegVersion = '8.1.1'
+$ffmpegSha256 = '6f58ce889f59c311410f7d2b18895b33c03456463486f3b1ebc93d97a0f54541'
 $ffmpegUrls = @(
     "https://github.com/GyanD/codexffmpeg/releases/download/$ffmpegVersion/ffmpeg-$ffmpegVersion-essentials_build.zip",
     "https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-$ffmpegVersion-essentials_build.zip"
@@ -37,7 +39,12 @@ Write-Host "Building Snappy $version"
 
 # 1. FFmpeg
 $ffmpegDir = Join-Path $PSScriptRoot 'ffmpeg'
-if (-not (Test-Path (Join-Path $ffmpegDir 'ffmpeg.exe'))) {
+$ffmpegExe = Join-Path $ffmpegDir 'ffmpeg.exe'
+if ((Test-Path $ffmpegExe) -and -not ((& $ffmpegExe -hide_banner -version | Select-Object -First 1) -match "version $([regex]::Escape($ffmpegVersion))-")) {
+    Write-Host "FFmpeg in .\ffmpeg is not $ffmpegVersion, replacing it"
+    Remove-Item $ffmpegExe
+}
+if (-not (Test-Path $ffmpegExe)) {
     New-Item -ItemType Directory -Force $ffmpegDir | Out-Null
     $download = Join-Path $env:TEMP "ffmpeg-$ffmpegVersion-essentials_build.zip"
     foreach ($url in $ffmpegUrls) {

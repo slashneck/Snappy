@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -34,6 +34,7 @@ public sealed class LibraryWindow : Form
         "https://github.com/slashneck/Snappy", "https://ffmpeg.org/", "https://www.gyan.dev/ffmpeg/",
         "https://developer.microsoft.com/microsoft-edge/webview2", "https://github.com/dotnet/runtime", "https://opensource.org/license/",
         "https://www.gnu.org/licenses/",
+        "https://www.nvidia.com/en-us/drivers/", "https://www.amd.com/en/support/download/drivers.html", // Snappy's driver tip
     };
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
@@ -51,6 +52,11 @@ public sealed class LibraryWindow : Form
     private StudioPreview? _studioPreview;
     private CancellationTokenSource? _import;
     private CancellationTokenSource? _moveAll;
+#if DEBUG
+    private const bool IsDevBuild = true; // lets the page offer test shortcuts
+#else
+    private const bool IsDevBuild = false;
+#endif
     private HotkeyListener? _snapHotkey;
     private string _lastInputState = "";
     private bool _ready;
@@ -162,6 +168,16 @@ public sealed class LibraryWindow : Form
     }
 
     private string _mappedExtras = "";
+    private DesktopSnappy? _escape; // Snappy out on the desktop, during the event where she climbs out of the window
+    private DesktopCanvas? _canvas;  // what she leaves on the desktop meanwhile
+    private string? _letter;          // the letter she opened in Notepad, removed again afterwards
+    private DesktopWindows.Cleared? _cleared; // the windows she cleared off the desktop
+    private DesktopProgram? _deskProgram;      // the Program, out on the desktop with her
+
+    /// <summary>Shows a real Windows notification from Snappy (the tray icon's), for her to send you a few.</summary>
+    public Action<string, string>? Notify { get; set; }
+    private Point? _windowHome;      // where this window was before she started shoving it around
+    private System.Windows.Forms.Timer? _windowSlide;
     private readonly List<int> _mappedIndexes = new();
 
     /// <summary>Lets the page load videos from the extra clip folders that are connected right now.</summary>
@@ -203,6 +219,48 @@ public sealed class LibraryWindow : Form
         r.DurationSeconds,
         id = r.FilePath != null && r.FilePath.StartsWith(_library.Root, StringComparison.OrdinalIgnoreCase) ? _library.RelativeId(r.FilePath) : null,
     });
+
+    /// <summary>Tells the page something happened elsewhere, e.g. the golden pop-up showed up over a game.</summary>
+    public void Announce(string name, object? data = null) => PostEvent(name, data);
+
+    private DesktopCanvas Canvas() => _canvas ??= new DesktopCanvas(Screen.FromControl(this).WorkingArea);
+
+    /// <summary>Slides this window to a spot on the screen, smoothly.</summary>
+    private void SlideWindow(Point to, int ms, bool carry = false)
+    {
+        _windowSlide?.Dispose();
+        if (WindowState == FormWindowState.Minimized) return;
+        var from = Location;
+        var clock = Stopwatch.StartNew();
+        _windowSlide = new System.Windows.Forms.Timer { Interval = 15 };
+        _windowSlide.Tick += (_, _) =>
+        {
+            double t = Math.Clamp(clock.ElapsedMilliseconds / (double)Math.Max(1, ms), 0, 1), e = t < 0.5 ? 2 * t * t : 1 - Math.Pow(-2 * t + 2, 2) / 2;
+            var was = Location;
+            Location = new Point((int)Math.Round(from.X + (to.X - from.X) * e), (int)Math.Round(from.Y + (to.Y - from.Y) * e));
+            // she's pushing it, so she moves exactly as much as it does
+            if (carry) _escape?.Nudge(Location.X - was.X, Location.Y - was.Y);
+            if (t >= 1) { _windowSlide?.Stop(); }
+        };
+        _windowSlide.Start();
+    }
+
+    /// <summary>A point in the page (CSS pixels from the top left of the page, also outside it) on the screen.</summary>
+    private PointF PageToScreen(double x, double y)
+    {
+        var origin = PageOrigin();
+        double k = DeviceDpi / 96.0;
+        return new PointF((float)(origin.X + x * k), (float)(origin.Y + y * k));
+    }
+
+    // Where the page's top left is on the screen. Minimized, Windows parks the window far off screen, so the last spot
+    // it really had is used instead (Snappy out on the desktop stays put when you minimize her window).
+    private Point _lastOrigin;
+    private Point PageOrigin()
+    {
+        if (WindowState != FormWindowState.Minimized) _lastOrigin = _web.PointToScreen(Point.Empty);
+        return _lastOrigin;
+    }
 
     private void PostEvent(string name, object? data)
     {
@@ -257,6 +315,8 @@ public sealed class LibraryWindow : Form
                     status = _recorder.GetStatus(),
                     version = Application.ProductVersion.Split('+')[0],
                     update = _updates.Status,
+                    userName = Environment.UserName, // Snappy signs her joke agreement with it; it never leaves the page
+                    dev = IsDevBuild,
                 };
             case "library.scan":
             {
@@ -388,6 +448,204 @@ public sealed class LibraryWindow : Form
                 return true;
             case "storage.usage":
                 return await Task.Run(() => StorageLimiter.FolderSize(_library.Root));
+#if DEBUG
+            case "dev.popup":
+            {
+                // plays the corner pop-up right away, as if a clip were being saved from a game
+                bool golden = Bool("shiny");
+                var popup = new MascotOverlay { Shiny = golden };
+                popup.ShowSaving("Valorant");
+                await Task.Delay(1600);
+                popup.ShowResult(true, golden ? "A shiny Snappy!" : "Got it!", "1:30 of Valorant");
+                _ = Task.Delay(7000).ContinueWith(_ => BeginInvoke(popup.Dispose));
+                return true;
+            }
+#endif
+            case "mascot.shiny":
+            {
+                // the golden pop-up once more, from the achievements
+                var popup = new MascotOverlay { Shiny = true, Still = !_recorder.Settings.MascotAnimations };
+                popup.ShowSaving("Snappy");
+                await Task.Delay(1400);
+                popup.ShowResult(true, "A shiny Snappy!", "One clip in five hundred");
+                _ = Task.Delay(7000).ContinueWith(_ => BeginInvoke(popup.Dispose));
+                return true;
+            }
+            case "sound.blip":
+                SnappySounds.Blip(Num("pitch"), Num("volume"));
+                return true;
+            case "sound.pblip":
+                SnappySounds.ProgramBlip(Num("pitch"), Num("volume"));
+                return true;
+            case "sound.play":
+                SnappySounds.Tune(Str("name"), Num("volume"));
+                return true;
+            case "sound.snap":
+                SnappySounds.Snap((int)(Num("volume") * 100));
+                return true;
+            case "sound.cblip":
+                SnappySounds.ClaudeBlip(Num("pitch"), Num("volume"));
+                return true;
+            case "sound.hush":
+                SnappySounds.Hush();
+                return true;
+            case "gag.confine":
+                ConfineCursor(Bool("on"));
+                return true;
+            case "escape.room":
+            {
+                // how much desktop there is around this window, in the page's own pixels
+                double k = DeviceDpi / 96.0;
+                var origin = PageOrigin();
+                var work = Screen.FromPoint(origin).WorkingArea;
+                return new
+                {
+                    normal = WindowState != FormWindowState.Maximized,
+                    right = (work.Right - (origin.X + _web.Width)) / k,
+                    left = (origin.X - work.Left) / k,
+                    floor = (work.Bottom - origin.Y) / k,
+                    top = (Bounds.Top - origin.Y) / k,
+                    // the whole work area, in the same page pixels
+                    area = new { x = (work.Left - origin.X) / k, y = (work.Top - origin.Y) / k, w = work.Width / k, h = work.Height / k },
+                };
+            }
+            case "escape.show":
+                if (_escape == null)
+                {
+                    _escape = new DesktopSnappy();
+                    _escape.Reacted += what => PostEvent("escape", new { what });
+                }
+                _escape.Appear(PageToScreen(Num("x"), Num("y")), (int)Math.Round(Num("size") * DeviceDpi / 96.0), Str("bubble") == "right");
+                return true;
+            case "escape.go":
+                _escape?.GoTo(PageToScreen(Num("x"), Num("y")), (int)Num("ms"), (int)Num("hops"), Bool("fall"));
+                return true;
+            case "escape.say":
+                _escape?.Say(Str("text"));
+                return true;
+            case "escape.face":
+                _escape?.Face(p["face"] is null ? null : Str("face"));
+                return true;
+            case "escape.grab":
+                if (_escape != null) _escape.Grabbable = Bool("on");
+                return true;
+            case "escape.cursor":
+                _escape?.StealCursor(Bool("on"));
+                return true;
+            case "escape.window":
+            {
+                // she shoves this window: it slides by so much (page pixels), and she goes along with it
+                double k = DeviceDpi / 96.0;
+                int dx = (int)Math.Round(Num("dx") * k), dy = (int)Math.Round(Num("dy") * k), ms = (int)Num("ms");
+                _windowHome ??= Location;
+                var work = Screen.FromControl(this).WorkingArea;
+                var to = new Point(Math.Clamp(Location.X + dx, work.Left - Width / 2, work.Right - Width / 2), Math.Clamp(Location.Y + dy, work.Top, work.Bottom - 80));
+                SlideWindow(to, ms, Bool("carry"));
+                return true;
+            }
+            case "escape.windowBack":
+                if (_windowHome is { } home) SlideWindow(home, (int)Num("ms"));
+                _windowHome = null;
+                return true;
+            case "desk.add":
+                Canvas().Add(Str("id"), Str("kind"), Str("text"), (float)Num("fx"), (float)Num("fy"));
+                _escape?.Raise();
+                return true;
+            case "desk.photo":
+                Canvas().Photo(Str("id"), (float)Num("fx"), (float)Num("fy"));
+                _escape?.Raise();
+                return true;
+            case "desk.confetti":
+                Canvas().Confetti((int)Num("ms"));
+                _escape?.Raise();
+                return true;
+            case "desk.shatter":
+                Canvas().Shatter(PageToScreen(Num("x"), Num("y")), Num("side") < 0 ? -1 : 1);
+                _escape?.Raise();
+                return true;
+            case "desk.beam":
+                if (Bool("on"))
+                {
+                    // from the Program's eye when it's out on the desktop, otherwise from a spot in the page
+                    var from = Str("from") == "program" && _deskProgram != null ? _deskProgram.Eye : PageToScreen(Num("x"), Num("y"));
+                    Canvas().Beam(from, () => _escape?.Feet ?? PointF.Empty, Bool("weak"));
+                }
+                else _canvas?.Remove("beam");
+                _escape?.Raise();
+                return true;
+            case "escape.launch":
+            {
+                double k = DeviceDpi / 96.0;
+                _escape?.Launch((float)(Num("vx") * k), (float)(Num("vy") * k));
+                return true;
+            }
+            case "escape.ledges":
+            {
+                // the tops of your windows she could stand on, in page pixels
+                double k = DeviceDpi / 96.0;
+                var origin = PageOrigin();
+                var work = Screen.FromPoint(origin).WorkingArea;
+                return DesktopWindows.Ledges(work, (int)(Num("min") * k))
+                    .Select(l => new { left = (l.Left - origin.X) / k, right = (l.Right - origin.X) / k, y = (l.Y - origin.Y) / k }).ToList();
+            }
+            case "escape.letter":
+            {
+                // a letter in Notepad: a text file of hers in the temp folder, deleted again when she's back
+                string dir = Path.Combine(Path.GetTempPath(), "Snappy");
+                Directory.CreateDirectory(dir);
+                _letter = Path.Combine(dir, "A letter from Snappy.txt");
+                File.WriteAllText(_letter, Str("text"));
+                Process.Start(new ProcessStartInfo("notepad.exe", $"\"{_letter}\"") { UseShellExecute = false });
+                return true;
+            }
+            case "escape.clear":
+                _cleared ??= DesktopWindows.ClearDesktop(Screen.FromPoint(PageOrigin()).WorkingArea);
+                return _cleared.Count;
+            case "escape.unclear":
+                if (_cleared != null) DesktopWindows.Restore(_cleared);
+                _cleared = null;
+                // the story goes on in here, in front of everything that came back
+                Activate();
+                return true;
+            case "escape.windowAway":
+            {
+                // this window slides down and right off the bottom of the screen (still open, so the story goes on in it)
+                _windowHome ??= Location;
+                var screen = Screen.FromControl(this).Bounds;
+                SlideWindow(new Point(Location.X, screen.Bottom + 20), (int)Num("ms"));
+                return true;
+            }
+            case "deskprog.show":
+                _deskProgram ??= new DesktopProgram(Screen.FromPoint(PageOrigin()).WorkingArea);
+                _deskProgram.Appear();
+                _escape?.Raise();
+                return true;
+            case "deskprog.say":
+                _deskProgram?.Say(Str("text"), Bool("alert"));
+                return true;
+            case "deskprog.timer":
+                _deskProgram?.Countdown(Str("text"));
+                return true;
+            case "deskprog.hide":
+                _deskProgram?.Vanish();
+                return true;
+            case "escape.notify":
+                Notify?.Invoke(Str("title"), Str("text"));
+                return true;
+            case "escape.cleanup":
+                // everything she did out there, undone
+                if (_letter != null) { try { File.Delete(_letter); } catch (IOException) { } catch (UnauthorizedAccessException) { } _letter = null; }
+                if (_cleared != null) DesktopWindows.Restore(_cleared);
+                _cleared = null;
+                _deskProgram?.Vanish();
+                _canvas?.Remove(null);
+                return true;
+            case "desk.remove":
+                _canvas?.Remove(p["id"] is null ? null : Str("id"));
+                return true;
+            case "escape.hide":
+                _escape?.Vanish();
+                return true;
             case "app.openLink":
             {
                 string url = Str("url");
@@ -518,6 +776,8 @@ public sealed class LibraryWindow : Form
             {
                 var updated = p["settings"].Deserialize<AppSettings>(Json) ?? throw new InvalidOperationException("Invalid settings");
                 updated.Sanitize();
+                // set by the pop-up while this window may have had older settings
+                updated.ShinySeen |= _recorder.Settings.ShinySeen;
                 bool rootChanged = !string.Equals(Path.GetFullPath(updated.ClipsFolder), _library.Root, StringComparison.OrdinalIgnoreCase)
                                    || !updated.ExtraClipFolders.SequenceEqual(_recorder.Settings.ExtraClipFolders, StringComparer.OrdinalIgnoreCase);
                 _applySettings(updated);
@@ -649,8 +909,53 @@ public sealed class LibraryWindow : Form
         }
     }
 
+    // During her mouse-stealing joke the pointer stays inside this window, so it can't show up outside while it's
+    // hidden. Let go when the joke ends, when the window loses focus or closes, and after 40 seconds no matter what.
+    private System.Windows.Forms.Timer? _confineLimit;
+
+    private void ConfineCursor(bool on)
+    {
+        _confineLimit?.Dispose();
+        _confineLimit = null;
+        if (!on || ActiveForm != this || WindowState == FormWindowState.Minimized)
+        {
+            ClipCursor(IntPtr.Zero);
+            return;
+        }
+        var r = RectangleToScreen(ClientRectangle);
+        var rect = new RECT { Left = r.Left, Top = r.Top, Right = r.Right, Bottom = r.Bottom };
+        ClipCursor(ref rect);
+        _confineLimit = new System.Windows.Forms.Timer { Interval = 40_000 };
+        _confineLimit.Tick += (_, _) => ConfineCursor(false);
+        _confineLimit.Start();
+    }
+
+    [StructLayout(LayoutKind.Sequential)] private struct RECT { public int Left, Top, Right, Bottom; }
+    [DllImport("user32.dll")] private static extern bool ClipCursor(ref RECT rect);
+    [DllImport("user32.dll")] private static extern bool ClipCursor(IntPtr rect);
+
+    // Snappy only talks while her window is in front.
+    protected override void OnActivated(EventArgs e)
+    {
+        base.OnActivated(e);
+        PostEvent("windowFocus", true);
+    }
+
+    protected override void OnDeactivate(EventArgs e)
+    {
+        base.OnDeactivate(e);
+        if (_confineLimit != null) ConfineCursor(false);
+        PostEvent("windowFocus", false);
+    }
+
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
+        if (_confineLimit != null) ConfineCursor(false);
+        _escape?.Dispose();
+        _canvas?.Dispose();
+        if (_cleared != null) DesktopWindows.Restore(_cleared);
+        _deskProgram?.Dispose();
+        _windowSlide?.Dispose();
         _closing.Cancel();
         _statusTimer.Stop();
         CloseStudioPreview();

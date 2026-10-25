@@ -90,6 +90,9 @@ public static class FfmpegArgs
         return w != display.Width || h != display.Height;
     }
 
+    private static readonly ConcurrentDictionary<string, string> ProbeErrors = new();
+    private static readonly string[] HardwareEncoders = { "h264_nvenc", "h264_amf", "h264_qsv" };
+
     public static bool Probe(string encoder) => ProbeCache.GetOrAdd(encoder, enc =>
     {
         try
@@ -100,9 +103,25 @@ public static class FfmpegArgs
                 UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true,
             };
             using var p = Process.Start(psi)!;
-            p.StandardError.ReadToEnd();
+            string err = p.StandardError.ReadToEnd();
             bool ok = p.WaitForExit(15_000) && p.ExitCode == 0;
-            Log.Info($"Encoder probe {enc}: {(ok ? "available" : "not available")}");
+#if DEBUG
+            // Development only: SNAPPY_FAIL_GPU_SECONDS=s makes the graphics card encoders fail for the first s seconds,
+            // the way an outdated driver does.
+            if (enc != "libx264" && double.TryParse(Environment.GetEnvironmentVariable("SNAPPY_FAIL_GPU_SECONDS"), out double failFor)
+                && (DateTime.Now - Process.GetCurrentProcess().StartTime).TotalSeconds < failFor)
+            {
+                ok = false;
+                err = "[h264_nvenc @ 0] Driver does not support the required nvenc API version. Required: 13.1 Found: 13.0\n" +
+                      "[h264_nvenc @ 0] The minimum required Nvidia driver for nvenc is 610.00 or newer";
+            }
+#endif
+            string why = err.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(l => System.Text.RegularExpressions.Regex.Replace(l, @"^\[[^\]]*\]\s*", ""))
+                .FirstOrDefault(l => l.Length > 0) ?? "";
+            if (ok) ProbeErrors.TryRemove(enc, out _);
+            else ProbeErrors[enc] = err;
+            Log.Info($"Encoder probe {enc}: {(ok ? "available" : $"not available ({why})")}");
             return ok;
         }
         catch (Exception ex)
@@ -111,6 +130,40 @@ public static class FfmpegArgs
             return false;
         }
     });
+
+    /// <summary>
+    /// Forgets which graphics card encoders failed, so they are tried again. A driver that was still starting, or
+    /// one that was just updated, shouldn't keep Snappy on the processor for the rest of the day.
+    /// </summary>
+    public static void RetryFailedEncoders()
+    {
+        foreach (var enc in ProbeCache.Where(kv => !kv.Value).Select(kv => kv.Key).ToList()) ProbeCache.TryRemove(enc, out _);
+    }
+
+    /// <summary>The graphics card can't record: whose card it is, whether its driver is simply too old, and what to do.</summary>
+    public sealed record GpuProblem(string Vendor, bool DriverTooOld, string Text);
+
+    /// <summary>
+    /// Why the graphics card in this PC can't record, in words the player can act on, or null when there's nothing to
+    /// say (it works, or the PC has no graphics card encoder at all).
+    /// </summary>
+    public static GpuProblem? GpuEncoderProblem()
+    {
+        var vendors = Displays.Enumerate().Select(d => d.VendorId).ToHashSet();
+        if (HardwareEncoders.Any(e => ProbeCache.TryGetValue(e, out bool ok) && ok)) return null;
+        const string meanwhile = " Until then Snappy records with the processor, which can make clips stutter when a game keeps it busy.";
+        if (vendors.Contains(0x10DE) && ProbeErrors.TryGetValue("h264_nvenc", out string? nv))
+        {
+            var need = System.Text.RegularExpressions.Regex.Match(nv, @"minimum required Nvidia driver for nvenc is ([\d.]+)");
+            if (need.Success || nv.Contains("required nvenc API version", StringComparison.OrdinalIgnoreCase))
+                return new("nvidia", true, $"Your NVIDIA driver is too old to record on the graphics card{(need.Success ? $" (Snappy needs {need.Groups[1].Value} or newer)" : "")}. " +
+                       "Update it with the NVIDIA app or from nvidia.com and Snappy switches over by itself." + meanwhile);
+            return new("nvidia", false, "The NVIDIA encoder didn't start. Updating the graphics driver usually fixes this, and Snappy switches over by itself once it works." + meanwhile);
+        }
+        if (vendors.Contains(0x1002) && ProbeErrors.ContainsKey("h264_amf"))
+            return new("amd", false, "The AMD encoder didn't start. Updating the driver (AMD Software: Adrenalin Edition) usually fixes this, and Snappy switches over by itself once it works." + meanwhile);
+        return null;
+    }
 
     /// <summary>Size of the recorded frames after the optional downscale.</summary>
     public static (int Width, int Height) OutputSize(AppSettings s, DisplayInfo display)

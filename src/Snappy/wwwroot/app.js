@@ -32,7 +32,6 @@ const state = {
 const byId = (id) => state.library.clips.find((c) => c.id === id);
 const folderLabel = (f) => (f === '*' ? 'All clips' : f === '' ? 'Unsorted' : f === 'fav' ? 'Favorites' : f);
 const inFolderFilter = (c) => state.folder === '*' || (state.folder === 'fav' ? c.favorite : c.folder === state.folder);
-const setTask = (task) => { document.body.dataset.task = task || ''; }; // hook for the animated mascot (phase 3)
 
 // ---------- formatting ----------
 function fmtDuration(sec) {
@@ -140,6 +139,7 @@ function applyStatus(st) {
   if (!st) return;
   state.status = st;
   Mascot.setBase({ recording: 'recording', paused: 'paused', starting: 'starting', problem: 'problem' }[st.state] || 'idle');
+  Talk.statusChanged(st);
   const el = $('#recStatus');
   el.dataset.state = st.state;
   el.querySelector('.rec-text').textContent =
@@ -174,6 +174,13 @@ function applySettingsToChrome() {
   $('#saveHotkey').textContent = hotkeyLabel(s.saveClipHotkey);
   $('#saveHotkey').hidden = !s.saveClipHotkey || s.saveClipHotkey.key === 'None';
   $('#saveClipBtn').title = `Save the last ${fmtSeconds(s.bufferSeconds)}`;
+  Speech.enabled = s.mascotTalks !== false;
+  Speech.sounds = s.mascotSounds !== false;
+  Speech.volume = (s.soundVolumePercent ?? 100) / 100;
+  Events.enabled = s.mascotEvents !== false;
+  Mascot.still(s.mascotAnimations === false);
+  Events.wear();
+  Holidays.theme();
 }
 
 // ---------- library ----------
@@ -266,7 +273,10 @@ function finishImport(r) {
     title: r.cancelled ? `Stopped after ${r.imported} clip${r.imported === 1 ? '' : 's'}` : `Imported ${r.imported} clip${r.imported === 1 ? '' : 's'} from ${importState.source}`,
     sub: extra,
   });
-  if (r.imported && !r.cancelled) Mascot.flash('happy');
+  if (r.imported && !r.cancelled) {
+    Mascot.flash('happy');
+    Speech.say(`{shine}${r.imported} clip${r.imported === 1 ? '' : 's'} moved in! {love}Welcome to the family.`, { kind: 'news' });
+  }
 }
 
 snappy.on('importProgress', (p) => {
@@ -279,12 +289,13 @@ snappy.on('importDone', finishImport);
 snappy.on('moveAllProgress', (p) => {
   if (!state.moveAll) return;
   state.moveAll.text = `Moving ${p.moved} of ${p.total} · ${fmtSize(p.done)} of ${fmtSize(p.bytes)}`;
+  Work.progress(p.bytes ? p.done / p.bytes : 0);
   const hint = document.querySelector('#settingsForm [data-action="moveAllStop"]')?.previousElementSibling;
   if (hint) hint.textContent = state.moveAll.text;
 });
 snappy.on('moveAllDone', async (r) => {
   state.moveAll = null;
-  Mascot.release('moveAll');
+  Work.end(!r.error, r.cancelled ? '{open}Okay, I stopped. {happy}Everything I moved is safe.' : Talk.doneLine('moveAll', !r.error));
   await refreshLibrary();
   if (state.view === 'settings') renderSettings();
   if (r.error) toast({ kind: 'error', title: `Moved ${r.moved} of ${r.total} clips`, sub: r.error, timeout: 10000 });
@@ -490,17 +501,17 @@ function folderPicker(x, y, current, onPick, ids = null) {
 async function moveToLocation(ids, location, label) {
   const total = ids.reduce((n, id) => n + (byId(id)?.size || 0), 0);
   toast({ title: `Moving ${ids.length === 1 ? 'clip' : `${ids.length} clips`} to ${label}`, sub: total > 200 * 1048576 ? `${fmtSize(total)}, this can take a moment on a USB stick` : '' });
-  Mascot.hold('move', 'working');
+  Work.begin({ text: Talk.workLine('move'), progress: false });
   try {
     const r = await snappy.call('clip.moveToLocation', { ids, location });
     state.selected.clear();
     await refreshLibrary();
+    Work.end(!r.error, Talk.doneLine('move', !r.error));
     if (r.error) toast({ kind: 'error', title: `Moved ${r.moved} of ${ids.length}`, sub: r.error, timeout: 9000 });
     else toast({ kind: 'success', title: `Moved ${r.moved === 1 ? 'clip' : `${r.moved} clips`} to ${label}` });
   } catch (err) {
+    Work.end(false, Talk.doneLine('move', false));
     toast({ kind: 'error', title: "Couldn't move", sub: err.message });
-  } finally {
-    Mascot.release('move');
   }
 }
 
@@ -541,20 +552,18 @@ async function setFavorite(ids, favorite) {
 async function buildMontage(crossfade) {
   const ids = [...state.selected];
   if (ids.length < 2) { toast({ title: 'Select at least two clips' }); return; }
-  Mascot.hold('montage', 'working');
-  toast({ title: `Building a montage of ${ids.length} clips…`, sub: 'You can keep using Snappy meanwhile', timeout: 3500 });
+  Work.begin({ text: Talk.workLine('montage'), progress: false });
   try {
     const id = await snappy.call('clips.montage', { ids, crossfade });
     state.newIds.add(id);
     setSelecting(false);
     await refreshLibrary();
-    Mascot.flash('happy', 1300);
+    Work.end(true, Talk.doneLine('montage'));
     const clip = byId(id);
     toast({ kind: 'success', title: 'Montage saved', sub: clip?.title || '', action: clip ? { label: 'Watch', fn: () => openClip(clip) } : null, timeout: 7000 });
   } catch (err) {
+    Work.end(false, Talk.doneLine('montage', false));
     toast({ kind: 'error', title: 'Couldn’t build the montage', sub: err.message, timeout: 8000 });
-  } finally {
-    Mascot.release('montage');
   }
 }
 
@@ -681,6 +690,8 @@ function openClip(clip, { autoplay = true } = {}) {
   updateTrimUI();
   renderTime();
   window.Editor?.open(clip);
+  if (!Tour.seen('clip') && Speech.enabled) setTimeout(() => { if (state.current === clip && state.view === 'player') Tour.start('clip'); }, 1300);
+  Talk.clipOpened(clip);
 }
 
 function loadVideo(url, at, autoplay) {
@@ -808,6 +819,7 @@ function setTrimPoint(which, t) {
   else state.trim.end = clamp(t, state.trim.start + min, dur());
   state.trim.touched = true;
   updateTrimUI();
+  document.dispatchEvent(new CustomEvent('snappy:changed'));
 }
 
 // ---------- settings ----------
@@ -893,6 +905,7 @@ async function saveSettings(mutate) {
   try {
     state.settings = await snappy.call('settings.save', { settings: next });
     applySettingsToChrome();
+    document.dispatchEvent(new CustomEvent('snappy:changed'));
     if (state.view === 'settings') renderSettings();
     window.Studio?.settingsChanged();
   } catch (err) {
@@ -901,7 +914,7 @@ async function saveSettings(mutate) {
   }
 }
 
-async function openSettings() {
+async function openSettings(section) {
   hideMenu();
   stopPreview();
   if (state.view === 'player') closePlayer(false);
@@ -921,7 +934,17 @@ async function openSettings() {
       return;
     }
   }
-  if (state.view === 'settings') renderSettings();
+  if (state.view !== 'settings') return;
+  renderSettings();
+  if (section) {
+    const group = document.getElementById(`set-${section}`);
+    group?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    group?.classList.remove('spotlight');
+    void group?.offsetWidth;
+    group?.classList.add('spotlight');
+  } else if (!Tour.seen('settings')) {
+    setTimeout(() => { if (state.view === 'settings') Tour.start('settings'); }, 350);
+  }
 }
 
 function renderSettings() {
@@ -1031,13 +1054,26 @@ function renderSettings() {
         `<span class="storage-usage" id="storageUsage"></span>${s.storageLimitEnabled ? `<input class="num-input wide" type="number" min="5" step="5" value="${s.storageLimitGb}" data-setting="storageLimitGb"><span class="hint">GB</span>` : ''}${toggle('storageLimitEnabled', s.storageLimitEnabled)}`)}
       ${row('Trimming', 'Fast is instant and lossless, but a cut can start up to a second early. Precise cuts on the exact frame and re-encodes on your graphics card.',
         select('trimMode', opt('fast', 'Fast (lossless)', s.trimMode) + opt('precise', 'Precise (exact frame)', s.trimMode)))}
-      ${row('Play a sound when a clip is saved', '', toggle('playSoundOnSave', s.playSoundOnSave))}
-      ${row('Show Snappy pop-up when a clip is saved', 'A small, click-through pop-up in the corner, also over games. It never shows up in your clips.', toggle('showNotificationOnSave', s.showNotificationOnSave))}
     </div>
 
     <div class="settings-group" id="set-studio"><h2>Studio</h2>
       ${row('Studio layers', 'Adds your Studio layers to clips. Turn off for raw clips, your scenes stay as they are.', toggle('studioEnabled', s.studioEnabled))}
       ${row('Switch scenes automatically', 'Uses the scene linked to the game you are playing, and your default scene the rest of the time.', toggle('studioAutoSwitch', s.studioAutoSwitch))}
+    </div>
+
+    <div class="settings-group" id="set-snappy"><h2>Snappy</h2>
+      ${row('Talks to you', 'Greetings, news like an update or a driver that needs one, and the odd comment, in a speech bubble. Only while this window is open.', toggle('mascotTalks', s.mascotTalks !== false))}
+      ${s.mascotTalks !== false ? row('Talking sounds', 'The little blips while she talks.', toggle('mascotSounds', s.mascotSounds !== false)) : ''}
+      ${row('Animations', 'She breathes, blinks, hops and fidgets. Turn off for a calm, still Snappy.', toggle('mascotAnimations', s.mascotAnimations !== false))}
+      ${row('Volume', `How loud her voice and the clip-saved sound are.${o.programAudio && !s.desktopAudioDeviceId ? ' Her sounds never end up in your clips.' : ''}`, range('soundVolumePercent', 0, 100, 5, s.soundVolumePercent ?? 100, '%'))}
+      ${row('Sound when a clip is saved', '', toggle('playSoundOnSave', s.playSoundOnSave))}
+      ${row('Pop-up when a clip is saved', 'A small, click-through Snappy in the corner, also over games. She never shows up in your clips.', toggle('showNotificationOnSave', s.showNotificationOnSave))}
+      ${s.mascotTalks !== false ? row('Events and surprises', 'Once in a while, every few days at most, she gets up to something: a little adventure, or a whole story. Skip any of them with Esc.', toggle('mascotEvents', s.mascotEvents !== false)) : ''}
+      ${row('Show me around', 'Snappy walks you through the settings, or through everything you can do with a clip.',
+        '<button class="btn ghost" data-action="tourAgain">Settings</button><button class="btn ghost" data-action="tourClip">Clips</button>')}
+      ${Events.outfits.length ? row('Outfit', 'Anything she has worn in an event you watched to the end. On special days she dresses up by herself, unless she is already wearing something.',
+        select('mascotOutfit', opt('', 'None', s.mascotOutfit || '') + Events.outfits.map((x) => opt(x.id, x.name, s.mascotOutfit || '')).join(''))) : ''}
+      ${Events.unlocked ? row('Achievements', 'Every event and secret you have found so far, ready to watch again.', '<button class="btn ghost" data-action="achievements">Open</button>') : ''}
     </div>
 
     <div class="settings-group" id="set-general"><h2>General</h2>
@@ -1049,6 +1085,7 @@ function renderSettings() {
     <div class="settings-group" id="set-about"><h2>About</h2>
       ${updateRowHtml()}
       ${row('Update automatically', 'Checks GitHub every few hours. A new version downloads in the background and installs once your PC has been idle for 10 minutes.', toggle('checkForUpdates', s.checkForUpdates))}
+      ${Notes.has(state.version) ? row("What's new", `Everything that changed in version ${esc(state.version)}, the way Snappy tells it.`, '<button class="btn ghost" data-action="whatsNew">Show me</button>') : ''}
       ${row('Source code', 'Snappy is free software under the GPL 3.0 license.', '<button class="btn ghost" data-action="openGithub">Open GitHub</button>')}
       ${row('Licenses and credits', 'The projects Snappy is built with.', '<button class="btn ghost" data-action="licenses">View</button>')}
       ${row('Log file', 'Handy when reporting a problem.', '<button class="btn ghost" data-action="openLog">Open</button>')}
@@ -1135,7 +1172,7 @@ function renderUpdatePill() {
   if (ready) $('#updatePillText').textContent = `Restart to update to ${state.update.available}`;
 }
 
-const SETTINGS_SECTIONS = [['replay', 'Replay buffer'], ['video', 'Video'], ['audio', 'Audio'], ['hotkeys', 'Hotkeys'], ['clips', 'Clips'], ['studio', 'Studio'], ['general', 'General'], ['about', 'About']];
+const SETTINGS_SECTIONS = [['replay', 'Replay buffer'], ['video', 'Video'], ['audio', 'Audio'], ['hotkeys', 'Hotkeys'], ['clips', 'Clips'], ['studio', 'Studio'], ['snappy', 'Snappy'], ['general', 'General'], ['about', 'About']];
 
 function renderSettingsNav() {
   $('#settingsNav').innerHTML = '<div class="settings-nav-title">On this page</div>'
@@ -1537,12 +1574,16 @@ function bind() {
         if (value !== 'off') s.micDeviceId = value === 'default' ? '' : value;
       } else if (key === 'monitorDeviceName' || key === 'encoder' || key === 'trimMode') {
         s[key] = value;
+      } else if (key === 'mascotOutfit') {
+        s[key] = value || null;
       } else if (el.type === 'checkbox') {
         s[key] = value;
       } else {
         s[key] = Number(value);
       }
     });
+    if (key === 'soundVolumePercent') Speech.sample(); // let them hear the new volume
+    Talk.settingChanged(key, el.type === 'checkbox' || key === 'mascotOutfit' ? value : Number(value));
   });
   form.addEventListener('click', async (e) => {
     const hk = e.target.closest('[data-hotkey]');
@@ -1574,7 +1615,7 @@ function bind() {
       try {
         const r = await snappy.call('library.moveAll', { location: i });
         state.moveAll = { location: i, text: `Starting… (${r.total} clips)` };
-        Mascot.hold('moveAll', 'working');
+        Work.begin({ text: Talk.workLine('moveAll') });
         renderSettings();
       } catch (err) { toast({ kind: 'error', title: 'Couldn’t move the clips', sub: err.message, timeout: 9000 }); }
     } else if (action === 'moveAllStop') {
@@ -1589,6 +1630,17 @@ function bind() {
     } else if (action === 'pickScreenshots') {
       const folder = await snappy.call('settings.pickFolder');
       if (folder) await saveSettings((s) => { s.screenshotsFolder = folder; });
+    } else if (action === 'achievements') {
+      Events.list();
+    } else if (action === 'whatsNew') {
+      Notes.show(state.version);
+    } else if (action === 'tourAgain') {
+      Tour.start('settings');
+    } else if (action === 'tourClip') {
+      const newest = [...(state.library?.clips || [])].sort((a, b) => b.date - a.date)[0];
+      if (!newest) { Speech.say("{worried}We need a clip first! {shine}Press your hotkey and I'll make one.", { kind: 'news', interrupt: true }); return; }
+      openClip(newest, { autoplay: false });
+      setTimeout(() => Tour.start('clip'), 900);
     } else if (action === 'openLog') {
       snappy.call('app.openLog');
     } else if (action === 'openGithub' || action === 'openReleases') {
@@ -1683,7 +1735,7 @@ function bind() {
   snappy.on('libraryChanged', debounce(refreshLibrary, 150));
   snappy.on('trimProgress', ({ progress }) => {
     $('#trimProgressFill').style.width = `${Math.round(progress * 100)}%`;
-    $('#stageBusyText').textContent = `Trimming… ${Math.round(progress * 100)}%`;
+    Work.progress(progress);
   });
   snappy.on('screenshotSaved', ({ folder }) => {
     toast({ kind: 'success', title: 'Screenshot saved', sub: folder || '', action: { label: 'Show', fn: () => snappy.call('screenshots.open') } });
@@ -1692,10 +1744,11 @@ function bind() {
     state.update = update;
     renderUpdatePill();
     renderUpdateRow();
+    Talk.updateChanged(update);
   });
+  snappy.on('windowFocus', (on) => Speech.setFocused(on));
   snappy.on('momentMarked', () => toast({ title: 'Moment marked', sub: 'It shows on the timeline of your next clip' }));
   snappy.on('clipSaving', () => {
-    setTask('clipping');
     Mascot.hold('clip', 'clipping');
     const b = $('#saveClipBtn');
     b.classList.remove('flash');
@@ -1703,12 +1756,12 @@ function bind() {
     b.classList.add('flash');
   });
   snappy.on('clipSaved', async (r) => {
-    setTask('');
     Mascot.release('clip');
     if (!r.success) { toast({ kind: 'error', title: "Couldn't save clip", sub: r.error, timeout: 7000 }); return; }
     Mascot.flash('happy', 1300);
     if (r.id) state.newIds.add(r.id);
     await refreshLibrary();
+    Talk.clipSaved(r);
     const clip = r.id && byId(r.id);
     toast({
       kind: 'success', title: 'Clip saved', sub: `${fmtDuration(r.durationSeconds)} · ${r.appName}`,
@@ -1733,12 +1786,16 @@ async function init() {
     const data = await snappy.call('app.init');
     state.settings = data.settings;
     state.version = data.version;
+    state.userName = data.userName;
+    state.dev = data.dev;
     state.update = data.update;
     renderUpdatePill();
     applySettingsToChrome();
     applyStatus(data.status);
     setLibrary(data.library);
     Mascot.release('init');
+    Talk.updateChanged(state.update);
+    if (!Life.opened()) Talk.greet();
   } catch (err) {
     Mascot.release('init');
     toast({ kind: 'error', title: 'Snappy couldn’t load your library', sub: err.message, timeout: 10000 });

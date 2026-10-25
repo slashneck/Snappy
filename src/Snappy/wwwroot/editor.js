@@ -59,12 +59,14 @@ const Editor = (() => {
     if (tab === 'audio') openAudio();
     if (tab === 'crop') openCrop();
     layoutLayers();
+    document.dispatchEvent(new CustomEvent('snappy:changed'));
   }
 
   function renderTabs() {
     const marks = { trim: state.trim.touched, audio: audioEdited(), crop: !!ed.crop };
     $$('#editTabs button').forEach((b) => b.classList.toggle('edited', !!marks[b.dataset.tab]));
     updateTrimUI();
+    document.dispatchEvent(new CustomEvent('snappy:changed'));
   }
 
   // Where the picture sits inside the stage (object-fit: contain).
@@ -628,12 +630,10 @@ const Editor = (() => {
       if (!ok) return;
     }
     const spec = buildSpec(replace);
-    const reencode = !!(spec.crop || spec.mode === 'precise');
+    const kind = replace ? 'replace' : hasEdits() ? 'edit' : 'trim';
     state.busy = true;
     state.mutating = true;
-    Mascot.hold('export', hasEdits() ? 'working' : 'trimming');
-    $('#stageBusyText').textContent = reencode ? 'Saving…' : 'Trimming…';
-    $('#stageBusy').hidden = false;
+    Work.begin({ text: Talk.workLine(kind), where: 'stage' });
     $('#trimProgress').hidden = false;
     $('#trimProgressFill').style.width = '0%';
     updateTrimUI();
@@ -645,7 +645,7 @@ const Editor = (() => {
       if (!replace) state.newIds.add(newId);
       await refreshLibrary();
       const result = byId(newId);
-      Mascot.flash('happy', 1300);
+      Work.end(true, Talk.doneLine(kind));
       if (replace) {
         state.trim = { start: 0, end: 0, touched: false };
         if (result) { state.current = result; renderClipMeta(); loadVideo(result.videoUrl, 0, false); open(result); }
@@ -654,13 +654,12 @@ const Editor = (() => {
         toast({ kind: 'success', title: 'Edited clip saved', sub: result?.title || '', action: result ? { label: 'Open', fn: () => openClip(result) } : null, timeout: 6000 });
       }
     } catch (err) {
+      Work.end(false, Talk.doneLine(kind, false));
       toast({ kind: 'error', title: 'Couldn’t save the edit', sub: err.message, timeout: 8000 });
       if (pos) loadVideo(clip.videoUrl, pos.at, false);
     } finally {
       state.busy = false;
       state.mutating = false;
-      Mascot.release('export');
-      $('#stageBusy').hidden = true;
       setTimeout(() => { $('#trimProgress').hidden = true; }, 400);
       updateTrimUI();
     }
@@ -672,10 +671,7 @@ const Editor = (() => {
     if (!clip || state.busy) return;
     const spec = buildSpec(false);
     state.busy = true;
-    state.busyLabel = 'Shrinking';
-    Mascot.hold('export', 'working');
-    $('#stageBusyText').textContent = `Shrinking to ${targetMb} MB…`;
-    $('#stageBusy').hidden = false;
+    Work.begin({ text: Talk.workLine('shrink'), where: 'stage' });
     $('#trimProgress').hidden = false;
     $('#trimProgressFill').style.width = '0%';
     updateTrimUI();
@@ -684,19 +680,17 @@ const Editor = (() => {
       const newId = await snappy.call('clip.shrink', { id: clip.id, spec, targetMb });
       state.newIds.add(newId);
       await refreshLibrary();
-      Mascot.flash('happy', 1300);
+      Work.end(true, Talk.doneLine('shrink'));
       const result = byId(newId);
       toast({
         kind: 'success', title: 'Copied. Paste it into Discord', sub: result ? `${result.title} · ${fmtSize(result.size)}` : '',
         action: { label: 'Show', fn: () => snappy.call('clip.reveal', { id: newId }) }, timeout: 7000,
       });
     } catch (err) {
+      Work.end(false, Talk.doneLine('shrink', false));
       toast({ kind: 'error', title: 'Couldn’t shrink the clip', sub: err.message, timeout: 8000 });
     } finally {
       state.busy = false;
-      state.busyLabel = null;
-      Mascot.release('export');
-      $('#stageBusy').hidden = true;
       setTimeout(() => { $('#trimProgress').hidden = true; }, 400);
       updateTrimUI();
     }
@@ -717,7 +711,7 @@ const Editor = (() => {
   $('#editTabs').addEventListener('click', (e) => { const b = e.target.closest('[data-tab]'); if (b) setTab(b.dataset.tab); });
   snappy.on('exportProgress', ({ progress }) => {
     $('#trimProgressFill').style.width = `${Math.round(progress * 100)}%`;
-    $('#stageBusyText').textContent = `${state.busyLabel || 'Saving'}… ${Math.round(progress * 100)}%`;
+    Work.progress(progress);
   });
   bindLanes();
   bindCrop();

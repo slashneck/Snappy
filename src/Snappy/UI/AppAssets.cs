@@ -1,4 +1,3 @@
-using System.Media;
 using System.Text.Json;
 
 namespace Snappy.UI;
@@ -7,7 +6,6 @@ namespace Snappy.UI;
 internal static class AppAssets
 {
     private static readonly Dictionary<string, Icon> Icons = new();
-    private static SoundPlayer? _snap;
 
     public static Stream Open(string name) =>
         typeof(AppAssets).Assembly.GetManifestResourceStream("Snappy.Assets." + name)
@@ -65,22 +63,5 @@ internal static class AppAssets
         using var s = Open("overlay.json");
         return JsonSerializer.Deserialize<Dictionary<string, StripInfo>>(s, new JsonSerializerOptions(JsonSerializerDefaults.Web))
                ?? new Dictionary<string, StripInfo>();
-    }
-
-    public static void PlaySnap()
-    {
-        try
-        {
-            if (_snap == null)
-            {
-                _snap = new SoundPlayer(Open("snap.wav"));
-                _snap.Load();
-            }
-            _snap.Play();
-        }
-        catch
-        {
-            SystemSounds.Asterisk.Play();
-        }
     }
 }

@@ -1,18 +1,18 @@
 {
   "clip": {
-    "frames": 26,
+    "frames": 27,
     "size": 128,
     "cols": 13,
     "fps": 30
   },
   "working": {
-    "frames": 33,
+    "frames": 36,
     "size": 128,
     "cols": 13,
     "fps": 30
   },
   "happy": {
-    "frames": 33,
+    "frames": 35,
     "size": 128,
     "cols": 13,
     "fps": 30
@@ -22,5 +22,11 @@
     "size": 128,
     "cols": 13,
     "fps": 30
+  },
+  "faces": {
+    "frames": 13,
+    "size": 128,
+    "cols": 13,
+    "fps": 1
   }
 }

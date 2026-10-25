@@ -22,14 +22,22 @@ public sealed class TrayApp : ApplicationContext
     private readonly RegisteredWaitHandle _showWait;
     private LibraryWindow? _libraryWindow;
     private MascotOverlay? _overlay;
-    private bool _overlayForCurrentClip;
+    private bool _overlayForCurrentClip, _shinyForCurrentClip;
     private UpdateService? _updates;
 
     public TrayApp(bool background)
     {
         _ui = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
+        bool existed = File.Exists(AppSettings.FilePath);
         var settings = AppSettings.Load(out bool migrated);
-        if (!File.Exists(AppSettings.FilePath) || migrated) settings.Save();
+        // Settings from before versions were remembered belong to someone who was here before Snappy could talk.
+        string version = Application.ProductVersion.Split('+')[0];
+        if (existed && settings.LastSeenVersion == null) settings.EarlyBird = true;
+        bool newVersion = settings.LastSeenVersion != version;
+        // someone who updated (not a fresh install) gets to see what changed
+        if (existed && newVersion) settings.WhatsNewFor = version;
+        settings.LastSeenVersion = version;
+        if (!existed || migrated || newVersion) settings.Save();
         // Keeps the startup entry pointing at this exe, e.g. after Snappy was moved or updated.
         if (settings.StartWithWindows && !Autostart.IsEnabled()) Autostart.Apply(true);
 #if DEBUG
@@ -67,7 +75,10 @@ public sealed class TrayApp : ApplicationContext
     {
         if (_libraryWindow == null || _libraryWindow.IsDisposed)
         {
-            _libraryWindow = new LibraryWindow(_recorder, ApplySettings, AppAssets.AppIcon(), _updates!);
+            _libraryWindow = new LibraryWindow(_recorder, ApplySettings, AppAssets.AppIcon(), _updates!)
+            {
+                Notify = (title, text) => _tray.ShowBalloonTip(4000, title, text, ToolTipIcon.None),
+            };
             _libraryWindow.FormClosed += (_, _) =>
             {
                 _libraryWindow = null;
@@ -108,7 +119,14 @@ public sealed class TrayApp : ApplicationContext
         _tray.Icon = AppAssets.TrayIcon("saving");
         _overlayForCurrentClip = OverlayWanted();
         if (!_overlayForCurrentClip) return;
-        try { Overlay.ShowSaving(app); }
+        // one clip in five hundred gets the golden Snappy
+        _shinyForCurrentClip = Random.Shared.Next(500) == 0;
+        try
+        {
+            Overlay.Still = !_recorder.Settings.MascotAnimations;
+            Overlay.Shiny = _shinyForCurrentClip;
+            Overlay.ShowSaving(app);
+        }
         catch (Exception ex) { Log.Error("Overlay failed", ex); }
     }
 
@@ -118,24 +136,40 @@ public sealed class TrayApp : ApplicationContext
         var s = _recorder.Settings;
         bool overlay = _overlayForCurrentClip || OverlayWanted();
         _overlayForCurrentClip = false;
+        bool wasShiny = _shinyForCurrentClip;
+        _shinyForCurrentClip = false;
 
         if (r.Success)
         {
-            if (s.PlaySoundOnSave) AppAssets.PlaySnap();
-            if (overlay) TryOverlay(true, "Clip saved", $"{FormatSeconds((int)Math.Round(r.DurationSeconds))} · {r.AppName}");
+            if (s.PlaySoundOnSave) Audio.SnappySounds.Snap(s.SoundVolumePercent);
+            // before an early bird has seen her find her voice in the app, the pop-up stays plain
+            string line = s.EarlyBird && !s.EarlyBirdSeen ? "Clip saved" : Pick(SavedLines);
+            bool shiny = overlay && wasShiny;
+            if (shiny) line = "A shiny Snappy!";
+            if (overlay) TryOverlay(true, line, $"{FormatSeconds((int)Math.Round(r.DurationSeconds))} of {r.AppName}", shiny);
+            if (shiny && !s.ShinySeen)
+            {
+                s.ShinySeen = true;
+                s.Save();
+                if (_libraryWindow is { IsDisposed: false }) _libraryWindow.Announce("shiny");
+            }
         }
         else
         {
             SystemSounds.Hand.Play();
-            if (overlay) TryOverlay(false, "Couldn't save clip", r.Error ?? "Unknown error");
+            if (overlay) TryOverlay(false, "Oops, that didn't work", r.Error ?? "Unknown error");
             else if (_libraryWindow == null) _tray.ShowBalloonTip(5000, "Couldn't save clip", r.Error ?? "Unknown error", ToolTipIcon.Warning);
         }
     }
 
+    // What Snappy says in the corner when a clip is saved.
+    private static readonly string[] SavedLines = { "Got it!", "Saved!", "Click! Saved.", "Nice one!", "Into the collection!", "That one's a keeper!" };
+    private static string Pick(string[] lines) => lines[Random.Shared.Next(lines.Length)];
+
     private void OnScreenshotSaved(string path)
     {
-        if (_recorder.Settings.PlaySoundOnSave) AppAssets.PlaySnap();
-        if (OverlayWanted()) TryOverlay(true, "Screenshot saved", Path.GetFileName(Path.GetDirectoryName(path)) ?? "");
+        if (_recorder.Settings.PlaySoundOnSave) Audio.SnappySounds.Snap(_recorder.Settings.SoundVolumePercent);
+        if (OverlayWanted()) TryOverlay(true, "Snap! Screenshot saved", Path.GetFileName(Path.GetDirectoryName(path)) ?? "");
     }
 
     private void OnMomentMarked()
@@ -143,9 +177,14 @@ public sealed class TrayApp : ApplicationContext
         if (OverlayWanted()) TryOverlay(true, "Moment marked", "It shows on the timeline of your next clip");
     }
 
-    private void TryOverlay(bool success, string title, string sub)
+    private void TryOverlay(bool success, string title, string sub, bool shiny = false)
     {
-        try { Overlay.ShowResult(success, title, sub); }
+        try
+        {
+            Overlay.Still = !_recorder.Settings.MascotAnimations;
+            Overlay.Shiny = shiny;
+            Overlay.ShowResult(success, title, sub);
+        }
         catch (Exception ex)
         {
             Log.Error("Overlay failed", ex);

@@ -27,6 +27,14 @@ public sealed class AudioSource : IAudioTrackSource, IDisposable
 
     private readonly bool _loopback;
     private readonly string _deviceId; // "" = follow Windows default
+    // The desktop recording leaves Snappy's own sound player out, where Windows can do that. 0 = nothing to leave out.
+    private readonly Func<int>? _leaveOut;
+    private bool _leaveOutFailed;
+    private volatile bool _reopen;
+    private const long LeavingOutDelayHns = 190_000;
+#if DEBUG
+    private int _traced;
+#endif
     private readonly long _bufferHns;
     private readonly Thread _thread;
     private volatile bool _stop;
@@ -39,11 +47,12 @@ public sealed class AudioSource : IAudioTrackSource, IDisposable
     public string DeviceName { get; private set; } = "";
     public string? LastError { get; private set; }
 
-    public AudioSource(string name, bool loopback, string deviceId, int bufferSeconds)
+    public AudioSource(string name, bool loopback, string deviceId, int bufferSeconds, Func<int>? leaveOut = null)
     {
         Name = name;
         _loopback = loopback;
         _deviceId = deviceId ?? "";
+        _leaveOut = loopback && _deviceId.Length == 0 && ProcessLoopback.Supported ? leaveOut : null;
         Channels = loopback ? 2 : 1;
         _bufferHns = Clock.SecondsToHns(bufferSeconds + 10);
         Ring = new RingArena((long)(bufferSeconds + 15) * SampleRate * BlockAlign);
@@ -52,6 +61,9 @@ public sealed class AudioSource : IAudioTrackSource, IDisposable
     }
 
     public void Start() => _thread.Start();
+
+    /// <summary>The process to leave out changed: start over with the new one.</summary>
+    public void Reopen() => _reopen = true;
 
     /// <summary>Loudest sample of the last moment, 0 to 1, for the level meter in Settings.</summary>
     public float RecentPeak(long windowHns = 1_200_000)
@@ -112,7 +124,10 @@ public sealed class AudioSource : IAudioTrackSource, IDisposable
         {
             try
             {
-                CaptureSession();
+                _reopen = false;
+                int leaveOut = _leaveOutFailed ? 0 : _leaveOut?.Invoke() ?? 0;
+                if (leaveOut > 0) CaptureLeavingOut(leaveOut);
+                else CaptureSession();
                 backoffMs = 500;
             }
             catch (Exception ex)
@@ -252,6 +267,138 @@ public sealed class AudioSource : IAudioTrackSource, IDisposable
             if (capture != null) Marshal.ReleaseComObject(capture);
             if (client != null) Marshal.ReleaseComObject(client);
             if (dev != null) Marshal.ReleaseComObject(dev);
+            if (en != null) Marshal.ReleaseComObject(en);
+        }
+    }
+
+    /// <summary>
+    /// Desktop audio minus one program: Windows mixes everything else for us. Its packets don't always carry a time,
+    /// so the timeline is kept by counting samples, and checked against the clock so it can't drift. If this way of
+    /// recording doesn't start, the whole desktop is recorded as before, for the rest of the session.
+    /// </summary>
+    private void CaptureLeavingOut(int processId)
+    {
+        IMMDeviceEnumerator? en = null;
+        IAudioClient? client = null;
+        IAudioCaptureClient? capture = null;
+        IntPtr fmtPtr = IntPtr.Zero, ready = IntPtr.Zero;
+        string openedId = "";
+        try
+        {
+            en = Wasapi.CreateEnumerator();
+            try
+            {
+                en.GetDefaultAudioEndpoint(EDataFlow.Render, ERole.Console, out var dev);
+                dev.GetId(out openedId);
+                DeviceName = Wasapi.FriendlyName(dev);
+                Marshal.ReleaseComObject(dev);
+            }
+            catch (COMException)
+            {
+                State = AudioSourceState.DeviceMissing;
+                LastError = "No default device";
+                return;
+            }
+
+            try
+            {
+                client = ProcessLoopback.Open(processId, exclude: true);
+                var wfx = new WaveFormatEx
+                {
+                    wFormatTag = 1, nChannels = 2, nSamplesPerSec = SampleRate, wBitsPerSample = 16, nBlockAlign = 4,
+                    nAvgBytesPerSec = SampleRate * 4, cbSize = 0,
+                };
+                fmtPtr = Marshal.AllocHGlobal(Marshal.SizeOf<WaveFormatEx>());
+                Marshal.StructureToPtr(wfx, fmtPtr, false);
+                client.Initialize(0 /* shared */, Wasapi.AUDCLNT_STREAMFLAGS_LOOPBACK | ProcessLoopback.AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
+                    2_000_000 /* 200 ms */, 0, fmtPtr, IntPtr.Zero);
+                ready = ProcessLoopback.CreateEvent(IntPtr.Zero, false, false, null);
+                client.SetEventHandle(ready);
+                var capIid = Wasapi.IID_IAudioCaptureClient;
+                client.GetService(ref capIid, out object capObj);
+                capture = (IAudioCaptureClient)capObj;
+                client.Start();
+            }
+            catch (Exception ex)
+            {
+                _leaveOutFailed = true;
+                Log.Warn($"[{Name}] can't leave Snappy's own sounds out on this PC, recording the whole desktop: {ex.Message}");
+                return;
+            }
+
+            State = AudioSourceState.Active;
+            LastError = null;
+            Log.Info($"[{Name}] capturing from '{DeviceName}', leaving out Snappy's own sounds");
+
+            byte[] silence = new byte[SampleRate * BlockAlign];
+            long next = 0; // where the next sample belongs on the timeline
+            long nextHousekeeping = Clock.NowHns();
+            while (!_stop && !_reopen)
+            {
+                ProcessLoopback.WaitForSingleObject(ready, 200);
+                while (!_stop)
+                {
+                    int hr = capture.GetNextPacketSize(out uint packetFrames);
+                    if (hr == Wasapi.AUDCLNT_E_DEVICE_INVALIDATED) return;
+                    Marshal.ThrowExceptionForHR(hr);
+                    if (packetFrames == 0) break;
+
+                    hr = capture.GetBuffer(out IntPtr data, out uint frames, out uint bufFlags, out _, out ulong qpc);
+                    if (hr == Wasapi.AUDCLNT_E_DEVICE_INVALIDATED) return;
+                    Marshal.ThrowExceptionForHR(hr);
+                    int bytes = (int)frames * BlockAlign;
+                    long durHns = frames * Clock.HnsPerSecond / SampleRate;
+                    long now = Clock.NowHns();
+                    long stamp = (long)qpc;
+#if DEBUG
+                    if (Environment.GetEnvironmentVariable("SNAPPY_AUDIO_TRACE") == "1" && _traced++ < 40)
+                        Log.Info($"[{Name}] packet {frames} frames, flags {bufFlags}, qpc {(long)qpc}, now {now}, now-qpc {(now - (long)qpc) / 10_000.0:0.0} ms");
+#endif
+                    if (stamp <= 0 || Math.Abs(now - stamp) > Clock.HnsPerSecond * 5)
+                    {
+                        // no usable time on the packet: continue right after the last one, unless that has wandered
+                        // more than 30 ms from the clock (after a pause in the sound), then start fresh from the clock
+                        stamp = next != 0 && Math.Abs(now - durHns - next) < 300_000 ? next : now - durHns;
+                    }
+                    // Windows delivers this mix about 19 ms after the normal desktop capture hears the same sound
+                    // (measured with --test-sound-exclusion), so it's moved back to line up with the video.
+                    stamp -= LeavingOutDelayHns;
+                    next = stamp + durHns + LeavingOutDelayHns;
+                    unsafe
+                    {
+                        if ((bufFlags & Wasapi.AUDCLNT_BUFFERFLAGS_SILENT) != 0 || data == IntPtr.Zero)
+                        {
+                            for (int off = 0; off < bytes; off += silence.Length)
+                                Ring.Append(silence.AsSpan(0, Math.Min(silence.Length, bytes - off)), stamp, durHns, 0, 0);
+                        }
+                        else
+                        {
+                            Ring.Append(new ReadOnlySpan<byte>((void*)data, bytes), stamp, durHns, 0, 0);
+                        }
+                    }
+                    capture.ReleaseBuffer(frames);
+                }
+
+                long tick = Clock.NowHns();
+                if (tick >= nextHousekeeping)
+                {
+                    nextHousekeeping = tick + Clock.HnsPerSecond * 2;
+                    Ring.EvictOlderThan(tick - _bufferHns);
+                    if (DefaultDeviceChanged(en, EDataFlow.Render, openedId))
+                    {
+                        Log.Info($"[{Name}] Windows default device changed, switching");
+                        return;
+                    }
+                }
+            }
+        }
+        finally
+        {
+            try { client?.Stop(); } catch { }
+            if (fmtPtr != IntPtr.Zero) Marshal.FreeHGlobal(fmtPtr);
+            if (ready != IntPtr.Zero) ProcessLoopback.CloseEvent(ready);
+            if (capture != null) Marshal.ReleaseComObject(capture);
+            if (client != null) Marshal.ReleaseComObject(client);
             if (en != null) Marshal.ReleaseComObject(en);
         }
     }

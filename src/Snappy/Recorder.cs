@@ -10,7 +10,8 @@ using Snappy.Video;
 namespace Snappy;
 
 public sealed record RecorderStatus(string State, string Text, double BufferedSeconds, int BufferSeconds, double MemoryMb,
-    string Encoder, bool Saving, string DesktopDevice, string MicDevice, List<string> Warnings, string LiveSceneId);
+    string Encoder, bool Saving, string DesktopDevice, string MicDevice, List<string> Warnings, string LiveSceneId,
+    FfmpegArgs.GpuProblem? Gpu = null);
 
 /// <summary>Owns the always-on pipeline (video, audio, hotkeys) and saves clips.</summary>
 public sealed class Recorder : IDisposable
@@ -28,6 +29,29 @@ public sealed class Recorder : IDisposable
     private StudioSetup _studio = StudioSetup.Load();
     private StudioScene? _liveScene;
     private System.Threading.Timer? _sceneTimer;
+    private System.Threading.Timer? _encoderRetry;
+
+    private void RetryGpuEncoder()
+    {
+        try
+        {
+            if (Encoder != "libx264" || Settings.Encoder == "libx264") return;
+            FfmpegArgs.RetryFailedEncoders();
+            string better = FfmpegArgs.ResolveEncoder(Settings.Encoder, Displays.Resolve(Settings.MonitorDeviceName));
+            if (better == "libx264") return;
+            Log.Info($"The graphics card encoder works now, moving recording to {better}");
+            lock (_gate)
+            {
+                Encoder = better;
+                _video?.ChangeEncoder(better);
+            }
+            StatusChanged?.Invoke();
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"Checking the graphics card encoder again failed: {ex.Message}");
+        }
+    }
 
     public AppSettings Settings { get; private set; }
     public bool Paused { get; private set; }
@@ -69,6 +93,9 @@ public sealed class Recorder : IDisposable
         _hotkeys.SetHotkeys(Settings.SaveClipHotkey, Settings.SaveShortClipHotkey, Settings.ScreenshotHotkey, Settings.MarkMomentHotkey);
         Encoder = FfmpegArgs.ResolveEncoder(Settings.Encoder, Displays.Resolve(Settings.MonitorDeviceName));
         Log.Info($"Using encoder {Encoder}");
+        // On the processor although a graphics card might do it: keep checking, a driver can be late after boot or get
+        // updated while Snappy runs. As soon as the card works, recording moves over without losing the replay.
+        _encoderRetry = new System.Threading.Timer(_ => RetryGpuEncoder(), null, TimeSpan.FromSeconds(45), TimeSpan.FromMinutes(3));
         _liveScene = PickScene();
         StartVideo();
         StartAudio();
@@ -263,8 +290,11 @@ public sealed class Recorder : IDisposable
             _ => ("starting", v.State.ToString()),
         };
         if (state == "problem") warnings.Insert(0, "Recording didn't start. Snappy keeps trying other ways to record. The details are in the log file (Settings, About).");
+        var gpu = Encoder == "libx264" && Settings.Encoder != "libx264" ? FfmpegArgs.GpuEncoderProblem() : null;
         if (v.FallbackNote != null) warnings.Add(v.FallbackNote);
-        return new RecorderStatus(state, text, buffered, Settings.BufferSeconds, memMb, v.EncoderName, saving, desktopName, micName, warnings, _liveScene?.Id ?? "");
+        else if (gpu != null) warnings.Add(gpu.Text);
+        return new RecorderStatus(state, text, buffered, Settings.BufferSeconds, memMb, v.EncoderName, saving, desktopName, micName, warnings,
+            _liveScene?.Id ?? "", gpu);
     }
 
     private void StartVideo()
@@ -287,7 +317,11 @@ public sealed class Recorder : IDisposable
         _audioKey = Settings.AudioPipelineKey();
         if (Settings.DesktopAudioEnabled)
         {
-            _desktop = new AudioSource("desktop", loopback: true, Settings.DesktopAudioDeviceId, Settings.BufferSeconds);
+            SnappySounds.Start(); // before the desktop recording, so it knows which process to leave out
+            SnappySounds.PlayerChanged -= OnSoundPlayerChanged;
+            SnappySounds.PlayerChanged += OnSoundPlayerChanged;
+            _desktop = new AudioSource("desktop", loopback: true, Settings.DesktopAudioDeviceId, Settings.BufferSeconds,
+                () => SnappySounds.PlayerId);
             _desktop.Start();
         }
         if (Settings.MicEnabled)
@@ -297,6 +331,8 @@ public sealed class Recorder : IDisposable
         }
         StartPrograms();
     }
+
+    private void OnSoundPlayerChanged() => _desktop?.Reopen();
 
     private void StopAudio()
     {
@@ -334,6 +370,7 @@ public sealed class Recorder : IDisposable
         SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
         SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         _sceneTimer?.Dispose();
+        _encoderRetry?.Dispose();
         _hotkeys.Dispose();
         StopVideo();
         StopAudio();

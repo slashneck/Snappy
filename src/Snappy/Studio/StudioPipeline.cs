@@ -23,13 +23,13 @@ public sealed class StudioPipeline : IDisposable
     private static string CacheDir => Path.Combine(AppPaths.LocalDataDir, "studio-cache");
 
     public static StudioPipeline? TryCreate(StudioScene scene, int outW, int outH, int fps, int sessionId,
-        Func<long> zeroTime, out string? error)
+        out string? error)
     {
         error = null;
         var pipeline = new StudioPipeline();
         try
         {
-            pipeline.Build(scene, outW, outH, fps, sessionId, zeroTime);
+            pipeline.Build(scene, outW, outH, fps, sessionId);
             if (pipeline._overlays.Count > 0) return pipeline;
         }
         catch (Exception ex)
@@ -41,7 +41,7 @@ public sealed class StudioPipeline : IDisposable
         return null;
     }
 
-    private void Build(StudioScene scene, int outW, int outH, int fps, int sessionId, Func<long> zeroTime)
+    private void Build(StudioScene scene, int outW, int outH, int fps, int sessionId)
     {
         Directory.CreateDirectory(CacheDir);
         foreach (string old in Directory.EnumerateFiles(CacheDir))
@@ -75,13 +75,15 @@ public sealed class StudioPipeline : IDisposable
                 if (source == null) continue;
                 // GIF frames are turned once when they're loaded; live pictures are turned as they change.
                 if (layer.Rotation != 0 && layer.Type != "gif") source = new RotatedSource(source, w, h, layer.Rotation);
-                int rate = layer.Type == "inputs" ? Math.Min(fps, 60) : Math.Min(fps, 30);
-                var feed = new LiveLayerFeed(source, $"snappy-{Environment.ProcessId}-{sessionId}-{input}", cw, ch, rate, zeroTime);
+                // Live pictures go at the clip's rate (up to 60) so each one is drawn right before the screen frame it
+                // lands on. A GIF has its own slow timing and doesn't need more than 30.
+                int rate = layer.Type == "gif" ? Math.Min(fps, 30) : Math.Min(fps, 60);
+                var feed = new LiveLayerFeed(source, $"snappy-{Environment.ProcessId}-{sessionId}-{input}", cw, ch, rate);
                 _feeds.Add(feed);
                 InputArgs.AddRange(new[]
                 {
                     "-f", "rawvideo", "-pix_fmt", "bgra", "-video_size", $"{cw}x{ch}", "-framerate", rate.ToString(),
-                    "-thread_queue_size", "8", "-i", Quote(feed.PipePath),
+                    "-thread_queue_size", "1", "-i", Quote(feed.PipePath),
                 });
             }
             _overlays.Add((input++, ox, oy, layer.Type != "image"));
@@ -157,14 +159,16 @@ internal interface ILayerSource : IDisposable
 }
 
 /// <summary>
-/// Streams a live layer to FFmpeg. Frame n is written when the capture clock reaches frame n, so what the layer shows
-/// lines up with the screen frame it gets blended onto.
+/// Streams a live layer to FFmpeg. FFmpeg takes the next layer frame whenever a screen frame reaches the overlay, and
+/// the pipe only holds a sliver of a frame, so a write returns once FFmpeg has the frame. Each frame is drawn the moment
+/// the one before it is taken, about two frames ahead of the screen frame it lands on, which keeps the layer in step
+/// with the screen. Writing frames by the clock instead made the overlay wait for them, and with the graphics card busy
+/// the screen frames piling up behind that wait were dropped: a third of a clip could turn into repeated frames.
 /// </summary>
 internal sealed class LiveLayerFeed : IDisposable
 {
     private readonly ILayerSource _source;
     private readonly NamedPipeServerStream _pipe;
-    private readonly Func<long> _zeroTime;
     private readonly CancellationTokenSource _cts = new();
     private readonly Thread _thread;
 
@@ -173,16 +177,14 @@ internal sealed class LiveLayerFeed : IDisposable
     public int Height { get; }
     public int Fps { get; }
 
-    /// <param name="zeroTime">QPC time of the capture's first frame, or long.MaxValue while it isn't known yet.</param>
-    public LiveLayerFeed(ILayerSource source, string pipeName, int width, int height, int fps, Func<long> zeroTime)
+    public LiveLayerFeed(ILayerSource source, string pipeName, int width, int height, int fps)
     {
         _source = source;
-        _zeroTime = zeroTime;
         Width = width;
         Height = height;
         Fps = fps;
         PipePath = @"\\.\pipe\" + pipeName;
-        _pipe = new NamedPipeServerStream(pipeName, PipeDirection.Out, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 0, width * height * 4);
+        _pipe = new NamedPipeServerStream(pipeName, PipeDirection.Out, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 0, 16 * 1024);
         _thread = new Thread(Run) { IsBackground = true, Name = "studio-layer", Priority = ThreadPriority.AboveNormal };
         _thread.Start();
     }
@@ -193,11 +195,8 @@ internal sealed class LiveLayerFeed : IDisposable
         {
             _pipe.WaitForConnectionAsync(_cts.Token).GetAwaiter().GetResult();
             var frame = new byte[Width * Height * 4];
-            using var sleep = new PreciseSleep();
-            for (long n = 0; !_cts.IsCancellationRequested; n++)
+            while (!_cts.IsCancellationRequested)
             {
-                long zero = _zeroTime();
-                if (zero != long.MaxValue) sleep.Until(zero + n * Clock.HnsPerSecond / Fps);
                 _source.Render(frame, Clock.NowHns());
                 _pipe.Write(frame, 0, frame.Length);
             }

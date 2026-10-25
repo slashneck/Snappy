@@ -10,6 +10,8 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        // Snappy's own sounds play in this tiny process, so recordings can leave them out (see SnappySounds).
+        if (args.Length > 0 && args[0] == "--sound-player") return Audio.SnappySounds.RunPlayer();
         if (args.Length >= 3 && args[0] == "--apply-update")
         {
             ApplicationConfiguration.Initialize();
@@ -39,6 +41,8 @@ internal static class Program
             return SelfTest.ShrinkTest(args[1], double.Parse(args[2], System.Globalization.CultureInfo.InvariantCulture), args.Length > 3 ? args[3] : null);
         if (args.Length > 2 && args[0] == "--test-export")
             return SelfTest.ExportTest(args[1], args[2]);
+        if (args.Length > 0 && args[0] == "--test-sound-exclusion")
+            return SelfTest.SoundExclusionTest();
 #endif
 
         using var mutex = new Mutex(true, @"Local\Snappy-SingleInstance" + AppPaths.InstanceSuffix, out bool isFirst);
@@ -135,6 +139,97 @@ internal static class SelfTest
         Console.WriteLine($"OK {output}");
         return 0;
     }
+    /// <summary>
+    /// Records the desktop twice at once, the normal way and leaving Snappy's sound player out, while Snappy blips and
+    /// then another program plays a tone. The normal recording must hear both, the other one only the tone.
+    /// </summary>
+    public static int SoundExclusionTest()
+    {
+        Audio.SnappySounds.Start();
+        Thread.Sleep(800);
+        if (Audio.SnappySounds.PlayerId == 0) { Console.WriteLine("FAILED no sound player (needs Windows 11)"); return 1; }
+        using var whole = new Audio.AudioSource("whole", loopback: true, "", 30);
+        using var leaving = new Audio.AudioSource("leaving", loopback: true, "", 30, () => Audio.SnappySounds.PlayerId);
+        // the same way Snappy records one program on its own track (split by program)
+        using var player = new Audio.ProcessAudioSource(Audio.SnappySounds.PlayerId, "player", 30);
+        whole.Start();
+        leaving.Start();
+        player.Start();
+        Thread.Sleep(1500);
+
+        long t0 = Clock.NowHns();
+        Thread.Sleep(1000); // quiet baseline
+        long t1 = Clock.NowHns();
+        for (int i = 0; i < 24; i++) { Audio.SnappySounds.Blip(820 + i % 5 * 40, 1); Thread.Sleep(60); }
+        Audio.SnappySounds.Snap(100);
+        Thread.Sleep(600);
+        long t2 = Clock.NowHns();
+        // a tone from a program that isn't Snappy
+        string tone = Path.Combine(Path.GetTempPath(), "snappy-test-tone.wav");
+        File.WriteAllBytes(tone, Tone(440, 1.4));
+        using (var other = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("powershell", $"-NoProfile -Command \"(New-Object Media.SoundPlayer '{tone}').PlaySync()\"")
+               { UseShellExecute = false, CreateNoWindow = true }))
+        {
+            other!.WaitForExit(8000);
+        }
+        long t3 = Clock.NowHns();
+        Thread.Sleep(400);
+
+        double Rms(Audio.AudioSource s, long from, long to)
+        {
+            double sum = 0; long n = 0;
+            byte[] buf = Array.Empty<byte>();
+            foreach (var e in s.Ring.Snapshot(from))
+            {
+                if (e.TimeHns > to) break;
+                if (buf.Length < e.Length) buf = new byte[e.Length];
+                if (!s.Ring.TryRead(e, buf)) continue;
+                foreach (short v in System.Runtime.InteropServices.MemoryMarshal.Cast<byte, short>(buf.AsSpan(0, e.Length))) { sum += (double)v * v; n++; }
+            }
+            return n == 0 ? 0 : Math.Sqrt(sum / n);
+        }
+        string Line(Audio.AudioSource s) => $"{s.Name,-8} quiet {Rms(s, t0, t1),7:0}  her sounds {Rms(s, t1, t2),7:0}  other program {Rms(s, t2, t3),7:0}";
+        Console.WriteLine(Line(whole));
+        Console.WriteLine(Line(leaving));
+        bool herHeardByWhole = Rms(whole, t1, t2) > Rms(whole, t0, t1) * 2 + 20;
+        bool herLeftOut = Rms(leaving, t1, t2) < Rms(leaving, t0, t1) * 1.5 + 20;
+        bool toneKept = Rms(leaving, t2, t3) > Rms(leaving, t0, t1) * 2 + 20;
+        // sync: where the tone starts in each recording; the normal one has always been in sync with the video
+        long Onset(Audio.IAudioTrackSource s, long from, int level)
+        {
+            byte[] buf = Array.Empty<byte>();
+            foreach (var e in s.Ring.Snapshot(from))
+            {
+                if (buf.Length < e.Length) buf = new byte[e.Length];
+                if (!s.Ring.TryRead(e, buf)) continue;
+                var samples = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, short>(buf.AsSpan(0, e.Length));
+                for (int i = 0; i < samples.Length; i += s.Channels)
+                    if (Math.Abs((int)samples[i]) > level) return e.TimeHns + (long)i / s.Channels * Clock.HnsPerSecond / Audio.AudioSource.SampleRate;
+            }
+            return 0;
+        }
+        long a = Onset(whole, t2, 2000), b = Onset(leaving, t2, 2000); // after her click has faded
+        Console.WriteLine(a > 0 && b > 0 ? $"tone starts {(b - a) / 10_000.0:+0.0;-0.0} ms later in the new recording than in the normal one" : "tone onset not found");
+        long c = Onset(whole, t1, 1200), d = Onset(player, t1, 1200);
+        Console.WriteLine(c > 0 && d > 0 ? $"her blips start {(d - c) / 10_000.0:+0.0;-0.0} ms later on a program track than in the normal recording" : "blip onset not found");
+        Console.WriteLine(herHeardByWhole && herLeftOut && toneKept ? "OK her sounds are left out, other programs are kept"
+            : $"FAILED heard-by-normal={herHeardByWhole} left-out={herLeftOut} other-kept={toneKept}");
+        Audio.SnappySounds.Stop();
+        try { File.Delete(tone); } catch { }
+        return 0;
+    }
+
+    private static byte[] Tone(double hz, double seconds)
+    {
+        int rate = 48000, frames = (int)(rate * seconds);
+        using var ms = new MemoryStream();
+        using var w = new BinaryWriter(ms);
+        w.Write("RIFF"u8); w.Write(36 + frames * 2); w.Write("WAVEfmt "u8); w.Write(16); w.Write((short)1); w.Write((short)1);
+        w.Write(rate); w.Write(rate * 2); w.Write((short)2); w.Write((short)16); w.Write("data"u8); w.Write(frames * 2);
+        for (int i = 0; i < frames; i++) w.Write((short)(Math.Sin(2 * Math.PI * hz * i / rate) * 9000));
+        return ms.ToArray();
+    }
+
     /// <summary>Shrinks a clip to a size, optionally with editor changes from a JSON EditSpec file.</summary>
     public static int ShrinkTest(string clip, double targetMb, string? specFile)
     {

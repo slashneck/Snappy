@@ -96,6 +96,7 @@ public sealed class ProcessAudioSource : IAudioTrackSource, IDisposable
             Log.Info($"[{Name}] recording this program on its own track");
 
             byte[] silence = new byte[AudioSource.SampleRate * 4];
+            long next = 0; // where the next sample belongs on the timeline
             long nextHousekeeping = Clock.NowHns();
             while (!_stop)
             {
@@ -114,8 +115,15 @@ public sealed class ProcessAudioSource : IAudioTrackSource, IDisposable
                     long durHns = frames * Clock.HnsPerSecond / AudioSource.SampleRate;
                     long now = Clock.NowHns();
                     long stamp = (long)qpc;
-                    // The virtual device does not always stamp its packets; fall back to the clock we are on anyway.
-                    if (stamp <= 0 || Math.Abs(now - stamp) > Clock.HnsPerSecond * 5) stamp = now - durHns;
+                    // The virtual device does not always stamp its packets. Then the packet continues right after the
+                    // last one, counted in samples, as long as that stays within 30 ms of the clock; after a pause in
+                    // the sound it starts fresh from the clock.
+                    if (stamp <= 0 || Math.Abs(now - stamp) > Clock.HnsPerSecond * 5)
+                        stamp = next != 0 && Math.Abs(now - durHns - next) < 300_000 ? next : now - durHns;
+                    next = stamp + durHns;
+                    // A program's own track arrives about 29 ms after the desktop capture hears the same sound
+                    // (measured with --test-sound-exclusion), so it's moved back to stay in sync with the rest.
+                    stamp -= 290_000;
                     unsafe
                     {
                         if ((bufFlags & Wasapi.AUDCLNT_BUFFERFLAGS_SILENT) != 0 || data == IntPtr.Zero)

@@ -6,7 +6,7 @@ the following projects.
 ## FFmpeg
 
 Snappy runs `ffmpeg.exe` as a separate program for screen capture, encoding and editing. The included binary is the
-FFmpeg 9.0.1 "essentials" build made by gyan.dev, licensed under the GNU General Public License version 3.
+FFmpeg 8.1.1 "essentials" build made by gyan.dev, licensed under the GNU General Public License version 3.
 
 - License text: `ffmpeg/LICENSE` next to Snappy, or https://www.gnu.org/licenses/gpl-3.0.html
 - FFmpeg source code: https://ffmpeg.org/download.html

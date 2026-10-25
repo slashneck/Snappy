@@ -1,0 +1,266 @@
+/* Snappy's speech bubble and her guided tours. The bubble is made of the same white as her body. */
+.speech, .tour-bubble {
+  position: fixed; z-index: 66; color: #0a0a0a; background: #f4f4f4; border-radius: 16px;
+  font: 600 13.5px/1.45 var(--font); letter-spacing: .005em;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .5), 0 2px 6px rgba(0, 0, 0, .35);
+}
+.speech-text .untyped, .tour-text .untyped { color: transparent; }
+
+/* ---------- the bubble next to her in the sidebar ---------- */
+.speech {
+  width: max-content; max-width: 286px; min-width: 120px; padding: 11px 30px 11px 14px; cursor: default;
+  transform-origin: 0 calc(var(--tail, 19px) + 8px); scale: .3; opacity: 0;
+  transition: scale .55s var(--spring-bouncy), opacity .12s ease-out;
+}
+.speech.in { scale: 1; opacity: 1; }
+.speech.leaving { scale: .82; opacity: 0; transition: scale .2s ease-in, opacity .18s ease-in; }
+/* the tail, pointing back at her */
+.speech::before {
+  content: ""; position: absolute; left: -7px; top: var(--tail, 19px); width: 16px; height: 16px;
+  background: inherit; border-radius: 3px; transform: rotate(45deg);
+}
+.speech-close {
+  position: absolute; top: 6px; right: 6px; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
+  color: #0a0a0a; opacity: .35; transition: opacity .15s, background .15s;
+}
+.speech-close:hover { opacity: .9; background: rgba(0, 0, 0, .07); }
+.speech-close svg { width: 12px; height: 12px; stroke-width: 2.6; }
+.speech-actions { display: flex; gap: 6px; margin-top: 9px; animation: tour-pop .45s both; }
+.speech-action.ghost { background: transparent; color: #0a0a0a; box-shadow: inset 0 0 0 1.5px rgba(10, 10, 10, .2); }
+.speech-action.ghost:hover { background: rgba(0, 0, 0, .06); }
+.speech-action, .tour-btn {
+  padding: 6px 13px; border-radius: 999px; background: #0a0a0a; color: #f4f4f4; font: 600 12.5px/1.2 var(--font);
+  transition: transform .4s var(--spring-bouncy), background .15s;
+}
+.speech-action:hover, .tour-btn:hover { transform: scale(1.05); background: #262626; }
+.speech-action:active, .tour-btn:active { transform: scale(.94); transition-duration: .08s; }
+/* more to come: a little arrow that bobs, click to keep reading */
+.speech-more { position: absolute; right: 12px; bottom: 8px; width: 0; height: 0; border: 5px solid transparent; border-top: 6px solid #0a0a0a; border-bottom: 0; animation: more-bob .9s var(--sway) infinite; }
+@keyframes more-bob { 50% { transform: translateY(3px); } }
+
+/* ---------- tours ---------- */
+.tour { position: fixed; inset: 0; z-index: 75; pointer-events: none; }
+.tour-block { position: fixed; inset: 0; pointer-events: auto; cursor: pointer; }
+.tour.leaving .tour-block { pointer-events: none; }
+.tour-snappy, .tour-bubble { pointer-events: auto; }
+.tour.leaving .tour-snappy, .tour.leaving .tour-bubble { pointer-events: none; }
+.tour-spot {
+  position: fixed; border-radius: 14px; pointer-events: none;
+  box-shadow: 0 0 0 200vmax rgba(4, 4, 6, 0);
+  transition: left .75s var(--spring), top .75s var(--spring), width .75s var(--spring), height .75s var(--spring), box-shadow .45s ease;
+}
+.tour.in .tour-spot { box-shadow: 0 0 0 200vmax rgba(2, 2, 4, .82); }
+.tour.in .tour-spot.lit { box-shadow: 0 0 0 200vmax rgba(2, 2, 4, .82), inset 0 0 0 1.5px rgba(255, 255, 255, .22), 0 0 30px 4px rgba(255, 255, 255, .06); }
+.tour.leaving .tour-spot { box-shadow: 0 0 0 200vmax rgba(4, 4, 6, 0); transition: box-shadow .5s ease .2s; }
+/* your turn: the lit setting breathes a soft ring, inviting a click */
+.tour-spot.try::after { content: ""; position: absolute; inset: -3px; border-radius: 16px; box-shadow: 0 0 0 2px rgba(255, 255, 255, .55); animation: try-ring 1.6s var(--sway) infinite; }
+@keyframes try-ring { 0%, 100% { opacity: .25; transform: scale(1); } 50% { opacity: 1; transform: scale(1.012); } }
+
+.tour-snappy { position: fixed; width: 112px; height: 112px; transform-origin: 50% 100%; transition: left .8s var(--spring), top .8s var(--spring); }
+.tour-body { width: 100%; height: 100%; transform-origin: 50% 100%; }
+.tour-mascot.mascot { width: 112px; height: 112px; }
+
+/* She runs in from the right in little hops, trips, and catches herself. */
+.tour-snappy.enter { animation: tour-enter 1.45s both; }
+.tour-snappy.enter .tour-body { animation: tour-run .24s var(--sway) 3; }
+@keyframes tour-enter {
+  0% { transform: translateX(110vw); animation-timing-function: cubic-bezier(.25, .6, .4, 1); }
+  48% { transform: translateX(20px); animation-timing-function: var(--fall); }
+  56% { transform: translateX(-6px) rotate(-17deg); animation-timing-function: var(--sway); }
+  66% { transform: translateX(-2px) rotate(9deg); animation-timing-function: var(--sway); }
+  76% { transform: rotate(-4.5deg); animation-timing-function: var(--sway); }
+  86% { transform: rotate(1.8deg); animation-timing-function: var(--sway); }
+  94% { transform: rotate(-.5deg); }
+  100% { transform: none; }
+}
+@keyframes tour-run {
+  0% { transform: none; }
+  20% { transform: scale(1.06, .94); animation-timing-function: var(--rise); }
+  55% { transform: translateY(-13px) scale(.96, 1.05); animation-timing-function: var(--fall); }
+  85% { transform: scale(1.05, .95); }
+  100% { transform: none; }
+}
+/* hopping over to the next setting */
+.tour-snappy.travel .tour-body { animation: tour-travel .8s both; }
+@keyframes tour-travel {
+  0% { transform: none; animation-timing-function: var(--sway); }
+  12% { transform: translateY(2px) scale(1.1, .88); animation-timing-function: var(--rise); }
+  42% { transform: translateY(-28px) scale(.94, 1.07); animation-timing-function: var(--fall); }
+  66% { transform: translateY(0) scale(1.12, .88); animation-timing-function: var(--sway); }
+  80% { transform: scale(.97, 1.03); animation-timing-function: var(--sway); }
+  91% { transform: scale(1.01, .99); }
+  100% { transform: none; }
+}
+
+.tour-bubble {
+  padding: 16px 18px 12px; font-size: 14.5px; cursor: default;
+  transform-origin: 0 34px; opacity: 0;
+  transition: left .8s var(--spring), top .8s var(--spring);
+}
+.tour-bubble.tail-right { transform-origin: 100% 34px; }
+.tour-bubble.pop { animation: tour-pop .55s both; }
+@keyframes tour-pop {
+  0% { opacity: 0; transform: scale(.55); animation-timing-function: var(--spring-bouncy); }
+  20% { opacity: 1; }
+  100% { opacity: 1; transform: none; }
+}
+.tour-bubble.leaving { animation: none; opacity: 0; transform: scale(.85); transition: opacity .2s ease-in, transform .2s ease-in; }
+.tour-bubble::before {
+  content: ""; position: absolute; left: -7px; top: 27px; width: 16px; height: 16px; background: inherit; border-radius: 3px; transform: rotate(45deg);
+}
+.tour-bubble.tail-right::before { left: auto; right: -7px; }
+.tour-text { min-height: 42px; padding-right: 28px; }
+.tour-skip { position: absolute; top: 10px; right: 12px; font: 600 12px/1 var(--font); color: rgba(10, 10, 10, .45); padding: 4px 6px; border-radius: 6px; }
+.tour-skip:hover { color: #0a0a0a; background: rgba(0, 0, 0, .06); }
+.tour-foot { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.tour-count { font: 600 11.5px/1 var(--font); color: rgba(10, 10, 10, .4); }
+.tour-hint { margin-right: auto; font: 500 11.5px/1 var(--font); color: rgba(10, 10, 10, .4); animation: hint-glow 1.6s var(--sway) infinite; }
+.tour-count + .tour-hint[hidden] + .tour-back, .tour-count + .tour-hint[hidden] + .tour-back[hidden] + .tour-next { margin-left: auto; }
+@keyframes hint-glow { 50% { opacity: .45; } }
+.tour-btn.ghost { background: transparent; color: #0a0a0a; box-shadow: inset 0 0 0 1.5px rgba(10, 10, 10, .18); }
+.tour-btn.ghost:hover { background: rgba(0, 0, 0, .06); }
+
+
+/* ---------- Snappy at work: she floats in, tells you what she's doing, and floats off when it's done ---------- */
+.work { display: flex; align-items: center; gap: 16px; }
+.work-snappy { flex: none; transform-origin: 50% 100%; }
+.stage-busy .work .mascot { width: 112px; height: 112px; }
+.work-float .work .mascot { width: 76px; height: 76px; }
+.work-bubble {
+  position: relative; width: 300px; padding: 12px 16px 13px; border-radius: 16px; background: #f4f4f4; color: #0a0a0a;
+  font: 600 13.5px/1.45 var(--font); box-shadow: 0 14px 34px rgba(0, 0, 0, .5), 0 2px 6px rgba(0, 0, 0, .35); transform-origin: 0 50%;
+}
+.work-bubble::before { content: ""; position: absolute; left: -7px; top: 50%; width: 16px; height: 16px; margin-top: -8px; background: inherit; border-radius: 3px; transform: rotate(45deg); }
+.work-text { min-height: 20px; }
+.work-text .untyped { color: transparent; }
+.work-bar { position: relative; height: 6px; margin: 10px 44px 1px 0; border-radius: 99px; background: rgba(10, 10, 10, .1); }
+.work-bar i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: inherit; background: #0a0a0a; transition: width .45s var(--spring-snappy); }
+.work-pct { position: absolute; left: calc(100% + 9px); top: 50%; transform: translateY(-50%); font: 700 11.5px/1 var(--font); color: rgba(10, 10, 10, .5); font-variant-numeric: tabular-nums; }
+/* no way to tell how far along: a little bead slides back and forth */
+.no-progress .work-bar i { width: 28% !important; animation: work-bead 1.3s var(--sway) infinite alternate; }
+.no-progress.done .work-bar i { width: 100% !important; animation: none; left: 0; }
+@keyframes work-bead { from { left: 0; } to { left: 72%; } }
+
+.stage-busy { gap: 0; opacity: 0; transition: opacity .25s ease; animation: none; }
+.work-float { position: fixed; left: 50%; bottom: 28px; z-index: 67; translate: -50% 0; pointer-events: none; opacity: 0; transition: opacity .25s ease; }
+.stage-busy.in, .work-float.in { opacity: 1; }
+.stage-busy.leaving, .work-float.leaving { opacity: 0; transition: opacity .3s ease .15s; }
+.in .work-snappy { animation: work-in .75s both; }
+.in .work-bubble { animation: tour-pop .55s .14s both; }
+.leaving .work-snappy { animation: work-out .48s both; }
+.leaving .work-bubble { animation: work-bubble-out .22s ease-in both; }
+@keyframes work-in {
+  0% { opacity: 0; transform: translateY(50px) scale(.6, .7); animation-timing-function: var(--rise); }
+  45% { opacity: 1; transform: translateY(-10px) scale(.95, 1.06); animation-timing-function: var(--sway); }
+  68% { transform: translateY(2px) scale(1.05, .95); animation-timing-function: var(--sway); }
+  84% { transform: scale(.985, 1.015); }
+  100% { transform: none; }
+}
+@keyframes work-out {
+  0% { transform: none; animation-timing-function: var(--sway); }
+  22% { transform: translateY(3px) scale(1.08, .92); animation-timing-function: var(--rise); }
+  100% { opacity: 0; transform: translateY(-46px) scale(.88, 1.06); }
+}
+@keyframes work-bubble-out { to { opacity: 0; transform: scale(.82); } }
+
+/* ---------- surprises ---------- */
+/* her pretend mouse pointer: the real one hides, this one looks exactly like the Windows arrow */
+html.cursor-taken, html.cursor-taken * { cursor: none !important; }
+.fake-cursor { position: fixed; left: 0; top: 0; z-index: 9999; width: 20px; height: 28px; margin: -1.5px 0 0 -1.5px; pointer-events: none; filter: drop-shadow(0 1px 1.4px rgba(0, 0, 0, .3)); }
+.fake-cursor svg { display: block; transform-origin: 2px 2px; }
+.fake-cursor.press svg { animation: cursor-press .24s ease-out; }
+@keyframes cursor-press { 40% { transform: scale(.8); } }
+
+.gag-block { position: fixed; inset: 0; z-index: 90; background: rgba(2, 2, 4, .4); animation: fadeIn .3s ease; }
+.gag-block.leaving { opacity: 0; transition: opacity .35s ease; }
+
+.actor { position: fixed; z-index: 92; width: var(--size); height: var(--size); pointer-events: none;
+  transition: left .8s var(--spring), top .8s var(--spring), width .7s var(--spring), height .7s var(--spring); }
+.actor-body { width: 100%; height: 100%; transform-origin: 50% 100%; }
+.actor .mascot { width: 100%; height: 100%; }
+.actor.travel .actor-body { animation: tour-travel .8s both; }
+.actor.run { transition: left 1s cubic-bezier(.25, .6, .4, 1), top 1s cubic-bezier(.25, .6, .4, 1); }
+.actor.run .actor-body { animation: tour-run .25s var(--sway) 4; }
+
+.actor-bubble {
+  position: absolute; left: calc(100% + 12px); top: calc(var(--size) * .6 - 25px); width: max-content; max-width: 300px; padding: 11px 15px;
+  background: #f4f4f4; color: #0a0a0a; border-radius: 16px; font: 600 13.5px/1.45 var(--font); transform-origin: 0 24px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .5), 0 2px 6px rgba(0, 0, 0, .35);
+}
+.actor-bubble::before { content: ""; position: absolute; left: -7px; top: 17px; width: 16px; height: 16px; background: inherit; border-radius: 3px; transform: rotate(45deg); }
+.actor-bubble.pop { animation: tour-pop .5s both; }
+.actor-bubble.left { left: auto; right: calc(100% + 12px); transform-origin: 100% 24px; }
+.actor-bubble.left::before { left: auto; right: -7px; }
+.actor-text .untyped { color: transparent; }
+
+/* the user agreement: a sheet of paper, a signature line and a big red stamp */
+.gag-paper {
+  position: fixed; left: 50%; top: 50%; z-index: 91; width: min(430px, calc(100vw - 48px));
+  padding: 26px 30px 22px; border-radius: 6px; background: #fbf7ee; color: #1b1b1b; font: 400 12.5px/1.5 Georgia, "Times New Roman", serif;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .55), 0 2px 0 rgba(0, 0, 0, .06);
+  translate: -50% -50%; rotate: -1.5deg; scale: .6; opacity: 0; pointer-events: none;
+  transition: scale .65s var(--spring-bouncy), opacity .2s ease;
+}
+.gag-paper.in { scale: 1; opacity: 1; }
+.gag-paper.away { translate: -50% -170%; rotate: 14deg; opacity: 0; transition: translate .75s cubic-bezier(.5, 0, .8, .3), rotate .75s ease-in, opacity .4s ease .35s; }
+.gag-paper.live .gag-buttons button { pointer-events: auto; }
+.gag-paper h3 { margin: 0; font: 700 20px/1.2 Georgia, serif; }
+.gag-sub { margin: 3px 0 12px; font: italic 11.5px/1.4 Georgia, serif; color: #6a6358; }
+.gag-paper ol { margin: 0; padding-left: 26px; }
+.gag-paper li { margin: 0 0 4px; padding-left: 2px; }
+.gag-paper li::marker { content: "§" counter(list-item) "  "; font-weight: 700; }
+.gag-fine { margin-top: 10px; font-size: 7.5px; line-height: 1.35; color: #9a9388; }
+.gag-sign { display: flex; align-items: flex-end; gap: 10px; margin-top: 16px; }
+.gag-sign > span { font: italic 12px Georgia, serif; color: #6a6358; }
+.gag-line { position: relative; flex: 1; height: 40px; border-bottom: 1.5px solid #2a2a2a; }
+.gag-sig {
+  position: absolute; left: 10px; bottom: 1px; white-space: nowrap; color: #1d2c6b; font: 30px/1 "Segoe Script", "Ink Free", cursive;
+  clip-path: inset(-12px calc(100% - var(--shown, 0%)) -12px -12px);
+  transform: translateY(calc(var(--wobble, 0px) * .25)) skewX(calc(var(--wobble, 0px) * -1.2deg)) rotate(calc(var(--wobble, 0px) * -.4deg));
+}
+.gag-buttons { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+.gag-buttons button { padding: 7px 16px; border-radius: 999px; font: 600 12.5px/1.2 var(--font); }
+.gag-decline { color: #1b1b1b; box-shadow: inset 0 0 0 1.5px rgba(0, 0, 0, .25); transition: translate .4s var(--spring-bouncy); }
+.gag-decline.dodge { translate: var(--dx) var(--dy); }
+.gag-agree { background: #1b1b1b; color: #fbf7ee; transition: transform .35s var(--spring-bouncy); }
+.gag-agree.pressed { transform: scale(.9); }
+.gag-stamp {
+  position: absolute; right: 58px; bottom: 72px; padding: 5px 14px; border: 4px solid #d6322b; border-radius: 8px; color: #d6322b;
+  font: 900 30px/1 var(--font-display); letter-spacing: .08em; rotate: -14deg; scale: 2.6; opacity: 0; pointer-events: none; mix-blend-mode: multiply;
+}
+.gag-paper.stamped .gag-stamp { animation: stamp-in .45s cubic-bezier(.3, 1.4, .5, 1) both; }
+.gag-paper.stamped { animation: paper-thump .4s .16s both; }
+@keyframes stamp-in { 0% { opacity: 0; scale: 2.6; } 55% { opacity: 1; scale: .9; } 100% { opacity: .92; scale: 1; } }
+@keyframes paper-thump { 30% { translate: -50% calc(-50% + 5px); scale: .985; } 100% { translate: -50% -50%; scale: 1; } }
+
+
+/* spring cleaning: her maid outfit, the fake clip, and the clips that "vanish" */
+/* a trip: she pitches forward and catches herself */
+.actor.trip .actor-body { animation: actor-trip .7s both; }
+@keyframes actor-trip {
+  0% { transform: none; animation-timing-function: var(--rise); }
+  25% { transform: translateX(10px) rotate(14deg) scale(1.04, .94); animation-timing-function: var(--sway); }
+  50% { transform: translateX(4px) rotate(-7deg); animation-timing-function: var(--sway); }
+  72% { transform: rotate(3deg); animation-timing-function: var(--sway); }
+  100% { transform: none; }
+}
+.gag-thumb { position: absolute; inset: 0; display: grid; place-items: center; background: radial-gradient(circle at 50% 45%, #3a1d1d, #120909 70%); }
+.gag-thumb span { font: 900 26px/1 var(--font-display); letter-spacing: .12em; color: #ff453a; rotate: -8deg; text-shadow: 0 2px 0 #000; }
+.gag-thumb::before { content: ""; position: absolute; width: 34px; height: 34px; border: 2px solid rgba(255, 255, 255, .5); border-radius: 50%; translate: 46px -26px; }
+.gag-press { transform: scale(.9) !important; transition: transform .1s ease-out !important; }
+#grid.gag-vanish .card { animation: gag-vanish .5s cubic-bezier(.5, 0, .8, .3) both; }
+#grid.gag-vanish .card:nth-child(3n + 1) { animation-delay: .05s; }
+#grid.gag-vanish .card:nth-child(3n + 2) { animation-delay: .12s; }
+#grid.gag-vanish .card:nth-child(3n) { animation-delay: .19s; }
+@keyframes gag-vanish { to { opacity: 0; transform: scale(.6) translateY(12px); } }
+#grid.gag-return .card { animation: gag-return .7s var(--spring-bouncy) both; }
+#grid.gag-return .card:nth-child(3n + 1) { animation-delay: .04s; }
+#grid.gag-return .card:nth-child(3n + 2) { animation-delay: .1s; }
+#grid.gag-return .card:nth-child(3n) { animation-delay: .16s; }
+@keyframes gag-return { from { opacity: 0; transform: scale(.6); } to { opacity: 1; transform: none; } }
+
+
+@media (prefers-reduced-motion: reduce) {
+  .speech, .tour-snappy, .tour-bubble, .tour-spot { transition: none !important; animation: none !important; }
+  .tour-snappy.enter .tour-body, .tour.leaving .tour-body { animation: none !important; }
+}
