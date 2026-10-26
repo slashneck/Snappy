@@ -770,6 +770,18 @@
     a.hush();
     stage.end();
     prog.leave();
+    // so, once the Program has gone, she adds the credit herself: very small, right under the app's name
+    const name = document.querySelector('.brand-name')?.getBoundingClientRect();
+    if (name?.width) {
+      await a.moveTo(name.right + 20, name.top - 14, { ms: 800 });
+      a.lookAt(name.left + 24, name.bottom + 8, true);
+      a.bounce();
+      Speech.tune('key', 0.8);
+    }
+    Events.leaveBehind('credits');
+    await ctx.wait(800);
+    await S('{wink}Small print. {pause}Nobody reads the small print.', { keepLook: true, hold: 900 });
+    a.hush();
     await a.home();
   }
 
@@ -831,11 +843,35 @@
     await S('{joy}Wow. {pause}You needed that.', { hold: 1000 });
     await P('I am uninstalling this conversation.', { hold: 1300 });
     a.hush();
-    unpop(btn, 300);
+    // the button doesn't go: it shrinks down into the corner, for later
+    btn.style.transition = 'left .8s var(--spring), top .8s var(--spring), scale .8s var(--spring)';
+    btn.style.left = `${innerWidth - 38}px`;
+    btn.style.top = `${innerHeight - 38}px`;
+    btn.style.scale = String(40 / 120);
+    await S("{wink}I'll leave it here. {pause}Just in case.", { hold: 600 });
+    Events.leaveBehind('scream', { instant: true });
+    btn.remove();
     stage.end();
     prog.leave();
     await a.home();
   }
+
+  // ...and the little one in the corner: press it and the Program lets it out again
+  const AGAIN = ['I said I was fine.', 'That was the last time.', 'Please stop pressing that.', 'I feel... lighter.', 'This button is not in my documentation.', 'Thank you. {pause}Do not tell anyone.'];
+  async function screamAgain(ctx) {
+    const app = document.querySelector('.app');
+    const top = { center: { x: innerWidth / 2 }, y: 64, size: 0 };
+    ctx.onEnd(() => app?.classList.remove('af-quake'));
+    const prog = Program.program(ctx);
+    app?.classList.add('af-quake');
+    prog.el.classList.add('screaming');
+    await prog.say('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.', { alert: true, hold: 200, near: top });
+    app?.classList.remove('af-quake');
+    prog.el.classList.remove('screaming');
+    await prog.say(AGAIN[Math.floor(Math.random() * AGAIN.length)], { hold: 900, near: top });
+    await prog.leave();
+  }
+  document.addEventListener('click', (e) => { if (e.target.closest('.af-scream button')) Events.play('screamagain'); });
 
   // ---------------------------------------------------------------------------
   // Free at last (for about four seconds): she restarts the Program.
@@ -933,6 +969,9 @@
   D('restart', { tier: 'uncommon', title: 'Free at Last', hint: 'There is a button in the settings she should not press.', run: restart, weight: 3 });
 
   Events.outfit('shades', { name: 'Sunglasses', markup: SHADES, from: 'steve' });
+  Events.aftermath('credits', { label: 'The small print', tag: 'by slashneck & Claude', title: 'Credits, as requested. Snappy added them herself.', tone: 'byline' });
+  Events.aftermath('scream', { label: 'The scream button', marks: [{ at: 'body', cls: 'af-scream', html: '<button tabindex="-1" title="For emergencies">SCREAM</button>' }] });
+  Events.define('screamagain', { system: true, quick: true, title: 'Scream', run: screamAgain });
 
   window.Program2 = { begin };
 })();

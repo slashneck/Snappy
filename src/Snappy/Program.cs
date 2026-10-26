@@ -61,7 +61,8 @@ internal static class Program
         Log.Info($"Snappy {Updater.Current} starting (args: {string.Join(' ', args)})");
         Updater.CleanUp();
         Studio.StudioPreview.Forget();
-        using var tray = new TrayApp(background: args.Contains("--background"));
+        // after an update (installed while the PC sat idle) she comes back quietly in the tray, never in anyone's way
+        using var tray = new TrayApp(background: args.Contains("--background") || args.Contains("--updated"));
         Application.Run(tray);
         Log.Info("Snappy exited");
         return 0;

@@ -455,24 +455,30 @@
     return { stop };
   }
 
-  // Two big choices; resolves with the one you click, or null if you don't. at: how far across the window they sit.
+  // The choices on a little ballot paper: one box to mark, with a pencil X. Resolves with the one you mark, or null if
+  // you don't. at: how far across the window it sits.
   function choose(ctx, stage, options, timeoutMs = 30000, at = '62%') {
-    const el = stage.add('sc-choices', options.map((o, i) => `<button class="sc-choice${o.accent ? ' accent' : ''}" data-i="${i}" style="--d:${i * 0.12}s">
-      <div class="sc-choice-title">${esc(o.title)}</div><div class="sc-choice-sub">${esc(o.sub)}</div><span class="sc-choice-btn">${esc(o.button)}</span></button>`).join(''));
+    const el = stage.add('sc-choices', `<div class="sc-ballot-head"><b>BALLOT</b><span>Mark one box</span></div>${options.map((o, i) => `
+      <button class="sc-choice${o.accent ? ' accent' : ''}" data-i="${i}" style="--d:${0.15 + i * 0.1}s" aria-label="${esc(o.button || o.title)}">
+        <span class="sc-box"><svg viewBox="0 0 24 24"><path class="a" d="M5 5.5 Q12 11 19.5 19"/><path class="b" d="M19 4.5 Q11 12 4.5 19.5"/></svg></span>
+        <span class="sc-choice-text"><span class="sc-choice-title">${esc(o.title)}</span>${o.sub ? `<span class="sc-choice-sub">${esc(o.sub)}</span>` : ''}</span>
+      </button>`).join('')}`);
     el.style.left = at;
     pop(el);
     return ctx.run(new Promise((res) => {
       const timer = setTimeout(() => res(null), timeoutMs);
       el.addEventListener('click', (e) => {
         const b = e.target.closest('[data-i]');
-        if (!b) return;
+        if (!b || el.classList.contains('chosen')) return;
         clearTimeout(timer);
         b.classList.add('picked');
         el.classList.add('chosen');
-        Speech.tune('tick');
+        // two strokes of the pencil
+        Speech.tune('tick', 0.7);
+        setTimeout(() => Speech.tune('tick', 0.5), 160);
         res(options[Number(b.dataset.i)].id);
       });
-    })).finally(() => setTimeout(() => unpop(el, 500), 450));
+    })).finally(() => setTimeout(() => unpop(el, 500), 700));
   }
 
   // A little crown that sits on her head (her own coordinates: body x 10..190, y 54..182).
@@ -792,6 +798,7 @@
     tier: 'rare', title: 'Trust Me Bro', hint: 'Snappy has a business idea. The Program has questions.', run: snappycoin, weight: 2,
   });
   Events.outfit('crown', { name: 'Crown', markup: CROWN, from: 'snappycoin' });
+  Events.aftermath('snappycoin', { label: 'The SnappyCoin', marks: [{ at: '.brand', cls: 'af-pic af-coin' }] });
 
   window.Program = { cine, program, dialogue, report, choose, fireworks };
 })();

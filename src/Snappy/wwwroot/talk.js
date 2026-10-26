@@ -9,6 +9,8 @@
   };
   const once = (key) => { if (store.get(`snappy.said.${key}`)) return false; store.set(`snappy.said.${key}`, '1'); return true; };
   const hk = (key) => hotkeyLabel(state.settings?.[key]);
+  // with the swap switch flipped, the Program is the camera: same moments, its own words
+  const V = (hers, its) => (Events.skin === 'program' ? its : hers);
   const length = (s) => fmtSeconds(s).replace('min', 'minutes').replace(/^(\d+)s$/, '$1 seconds');
 
   // ----- what's new, the first time you open her after an update -----
@@ -17,7 +19,7 @@
     const last = store.get('snappy.version');
     store.set('snappy.version', state.version);
     if (!last || last === state.version || Notes.has(state.version)) return false;
-    Speech.say(`{shine}I just got updated to ${state.version}! {happy}Fresh new me.`,
+    Speech.say(V(`{shine}I just got updated to ${state.version}! {happy}Fresh new me.`, `Updated to ${state.version}. Snappy is very excited. I am telling you on her behalf.`),
       { kind: 'news', key: 'whatsNew', action: { label: 'Show me', fn: () => openSettings('snappy') } });
     return true;
   }
@@ -37,10 +39,13 @@
     const byDay = {};
     for (const c of clips) { const day = c.date.toLocaleDateString(undefined, { weekday: 'long' }); byDay[day] = (byDay[day] || 0) + 1; }
     const [busiest] = Object.entries(byDay).sort((a, b) => b[1] - a[1])[0];
-    Speech.say([
+    Speech.say(V([
       `{shine}Weekly recap! {open}Last week you saved ${clips.length} clips.`,
       topCount > 1 && top !== 'Unsorted' ? `{happy}Most of them in ${top}. {open}Your busiest day was ${busiest}. {wink}Busy busy!` : `{open}Your busiest day was ${busiest}. {wink}Busy busy!`,
-    ], { kind: 'news', key: 'recap' });
+    ], [
+      `Weekly report: ${clips.length} clips saved last week.`,
+      topCount > 1 && top !== 'Unsorted' ? `Most of them in ${top}. Busiest day: ${busiest}. Efficient.` : `Busiest day: ${busiest}. Efficient.`,
+    ]), { kind: 'news', key: 'recap' });
     return true;
   }
 
@@ -50,7 +55,8 @@
     if (!free || free > 5 * 1073741824) return false;
     if (Date.now() - Number(store.get('snappy.driveFull') || 0) < 3 * 864e5) return false;
     store.set('snappy.driveFull', String(Date.now()));
-    Speech.say([`{worried}Psst... the drive with your clips only has ${fmtSize(free)} left.`, '{open}Want to see where you can make some room?'],
+    Speech.say(V([`{worried}Psst... the drive with your clips only has ${fmtSize(free)} left.`, '{open}Want to see where you can make some room?'],
+      [`The drive with your clips has ${fmtSize(free)} left.`, 'I recommend making room. I can show you where.']),
       { kind: 'news', key: 'drive', action: { label: 'Show me', fn: () => openSettings('clips') } });
     return true;
   }
@@ -78,7 +84,7 @@
     const night = new Date().toDateString();
     if (h >= 2 && h < 5 && store.get('snappy.lateNight') !== night) {
       store.set('snappy.lateNight', night);
-      setTimeout(() => Speech.say([`{worried}It's ${h} AM! {pause}Go to sleep!`, '{open}... {pause}{wink}okay, one more game.'], { kind: 'news', key: 'greet' }), 700);
+      setTimeout(() => Speech.say(V([`{worried}It's ${h} AM! {pause}Go to sleep!`, '{open}... {pause}{wink}okay, one more game.'], [`It is ${h} AM. Go to sleep.`, 'That was not a suggestion.']), { kind: 'news', key: 'greet' }), 700);
       Life.found('night');
       return;
     }
@@ -89,7 +95,13 @@
         smooth ? "{happy}Hi again! {shine}Everything's running smooth on my end." : '{happy}Hi again!']
       : h >= 17 && h < 23 ? ['{shine}Evening! Gaming time? {wink}I was born ready.', "{happy}Good evening! {shine}Let's catch something cool tonight."]
       : ["{worried}It's really late... {open}I'll keep watching, {happy}you get some sleep soon, okay?", "{wink}Night owl? Me too. {open}Well, I'm a camera. {happy}I'm always up."];
-    setTimeout(() => Speech.say(pick(chance(0.5) ? any : time), { kind: 'news', key: 'greet', hold: 5500 }), 700);
+    const itsAny = ['Welcome back. I have been here the whole time.', 'Hello. Snappy is resting. I am the camera today.', 'You have returned. Recording continued in your absence.',
+      'Greetings. I have practiced being cheerful. This is it.', 'Hello. Please do not poke the camera. Snappy says you will anyway.'];
+    const itsTime = h >= 5 && h < 11 ? ['Good morning. I do not sleep. Neither does the recorder.', 'Morning. Snappy usually says something cute here. I will not.']
+      : h >= 11 && h < 17 ? ['Good afternoon. Your screen has been observed. For clips. Only for clips.', smooth ? 'Good afternoon. All systems nominal.' : 'Hello again.']
+      : h >= 17 && h < 23 ? ['Good evening. Statistically, this is when the good clips happen.', 'Evening. I am ready. I am always ready.']
+      : ['It is late. Sleep is recommended. I will keep recording.', 'You are awake at an unusual hour. So am I. I am always awake.'];
+    setTimeout(() => Speech.say(pick(V(chance(0.5) ? any : time, chance(0.5) ? itsAny : itsTime)), { kind: 'news', key: 'greet', hold: 5500 }), 700);
   }
 
   // ----- clips -----
@@ -100,14 +112,14 @@
     recentClips = recentClips.filter((t) => Date.now() - t < 60000);
     recentClips.push(Date.now());
     if (recentClips.length === 3) {
-      Speech.say("{worried}Whoa, whoa, slow down! {pause}{wink}I'm only one camera!", { kind: 'news', key: 'rapid' });
+      Speech.say(V("{worried}Whoa, whoa, slow down! {pause}{wink}I'm only one camera!", 'Three clips in one minute. I am handling it. Calmly.'), { kind: 'news', key: 'rapid' });
       Life.found('rapid');
       return;
     }
     const clip = r?.id && byId(r.id);
     const sameFolder = clip?.folder ? state.library.clips.filter((c) => c.folder === clip.folder).length : 0;
     if (sameFolder === 1 && count > 1) {
-      Speech.say(`{shine}Ooh, a new one! {happy}I made a folder for ${clip.folder}.`, { kind: 'news', key: 'newGame' });
+      Speech.say(V(`{shine}Ooh, a new one! {happy}I made a folder for ${clip.folder}.`, `New game detected. Folder created: ${clip.folder}.`), { kind: 'news', key: 'newGame' });
       return;
     }
     if (count === 1 && once('firstClip')) {
@@ -119,14 +131,17 @@
     if (milestone && count < milestone * 1.2) {
       once(`clips${milestone}`);
       if (milestone === 100) Life.found('party');
-      Speech.say(milestone === 100 ? ['{shine}A hundred clips!! {hop}', "{wink}Should we throw a party? {happy}I'll bring the flash."]
-        : `{shine}That's ${milestone} clips! {joy}We make a pretty good team, huh?`, { kind: 'news' });
+      Speech.say(V(milestone === 100 ? ['{shine}A hundred clips!! {hop}', "{wink}Should we throw a party? {happy}I'll bring the flash."]
+        : `{shine}That's ${milestone} clips! {joy}We make a pretty good team, huh?`,
+      milestone === 100 ? ['One hundred clips.', 'Snappy would throw a party. I have put one in my calendar. It is just me.'] : `${milestone} clips. A respectable number.`), { kind: 'news' });
       return;
     }
     if (chance(0.3)) {
-      Speech.say(pick(["{happy}Got it! {wink}That one's a keeper.", '{shine}Click! {happy}Saved and safe.', '{shine}Ooh, nice one!',
+      Speech.say(pick(V(["{happy}Got it! {wink}That one's a keeper.", '{shine}Click! {happy}Saved and safe.', '{shine}Ooh, nice one!',
         '{happy}Saved! {open}I almost blinked. {pause}{wink}Almost.', '{happy}Into the collection it goes!',
-        '{shine}Was that... {pause}legendary? {happy}I think that was legendary.']));
+        '{shine}Was that... {pause}legendary? {happy}I think that was legendary.'],
+      ['Saved.', 'Clip saved. Quality: acceptable.', 'Captured. Filed. Done.', 'That was a good one. I am allowed to say that.',
+        'Saved. I did not blink. I have an eyelid now, so that was a choice.', 'Stored safely. As always.'])));
     }
   }
 
@@ -135,8 +150,8 @@
   function statusChanged(st) {
     const before = lastState;
     lastState = st.state;
-    if (before === 'recording' && st.state === 'paused') Speech.say(pick(['Okay... eyes closed. Wake me when you need me.', 'Nap time? {pause}Nap time.']));
-    if (before === 'paused' && st.state === 'recording') Speech.say(pick(["{shine}I'm up! I'm up! {happy}Recording again.", "{shine}I'm awake! {worried}Did I miss anything?"]));
+    if (before === 'recording' && st.state === 'paused') Speech.say(pick(V(['Okay... eyes closed. Wake me when you need me.', 'Nap time? {pause}Nap time.'], ['Recording paused. I will wait here.', 'Paused. I am not napping. Cameras do not nap.'])));
+    if (before === 'paused' && st.state === 'recording') Speech.say(pick(V(["{shine}I'm up! I'm up! {happy}Recording again.", "{shine}I'm awake! {worried}Did I miss anything?"], ['Recording resumed.', 'Back on duty.'])));
     gpuCheck(st);
     problemCheck(st);
   }
@@ -149,13 +164,19 @@
     gpuTold = true;
     const nvidia = g.vendor === 'nvidia';
     const brand = nvidia ? 'NVIDIA' : 'AMD';
-    Speech.say(g.driverTooOld ? [
+    Speech.say(V(g.driverTooOld ? [
       `{worried}Um... {pause}small problem. Your ${brand} driver is too old, so I can't use the graphics card.`,
       "{worried}I'm recording with the processor for now, and clips might stutter. {shine}Update the driver and I'll switch back all by myself!",
     ] : [
       `{worried}Um... {pause}the ${brand} encoder on your graphics card won't start for me.`,
       "{worried}I'm using the processor meanwhile, so clips might stutter. {shine}A driver update usually fixes it!",
-    ], {
+    ], g.driverTooOld ? [
+      `Your ${brand} driver is out of date. I cannot use the graphics card.`,
+      'Recording with the processor for now. Clips may stutter. Update the driver and I will switch back on my own.',
+    ] : [
+      `The ${brand} encoder on your graphics card did not start.`,
+      'Using the processor meanwhile. Clips may stutter. A driver update usually resolves this.',
+    ]), {
       kind: 'news', key: 'gpu',
       action: { label: 'Get the driver', fn: () => snappy.call('app.openLink', { url: nvidia ? 'https://www.nvidia.com/en-us/drivers/' : 'https://www.amd.com/en/support/download/drivers.html' }) },
     });
@@ -167,7 +188,7 @@
     problemSince ||= Date.now();
     if (Date.now() - problemSince > 12000 && Date.now() - problemTold > 10 * 60e3) {
       problemTold = Date.now();
-      Speech.say(["{worried}Hmm, I can't see your screen right now...", "{shine}I'm trying again, {worried}hang on!"], { kind: 'news', key: 'problem' });
+      Speech.say(V(["{worried}Hmm, I can't see your screen right now...", "{shine}I'm trying again, {worried}hang on!"], ['I cannot see your screen right now.', 'Retrying. Please stand by.']), { kind: 'news', key: 'problem' });
     }
   }
 
@@ -176,10 +197,10 @@
     if (!u?.available || (u.state !== 'ready' && u.state !== 'available')) return;
     if (store.get('snappy.said.update') === u.available) return;
     store.set('snappy.said.update', u.available);
-    Speech.say([
+    Speech.say(V([
       '{shine}Psst! {pause}A new version of me just arrived!',
       u.state === 'ready' ? "{wink}Want to see? {happy}I'll only be gone for a second." : "{wink}It's waiting for you on GitHub.",
-    ], { kind: 'news', key: 'update', action: { label: 'Show me', fn: () => openSettings('about') } });
+    ], ['A new version is available.', u.state === 'ready' ? 'Restarting takes a second. I will hold on to the clips.' : 'It is waiting on GitHub.']), { kind: 'news', key: 'update', action: { label: 'Show me', fn: () => openSettings('about') } });
   }
 
   // ----- poke her in a clip or in Settings, and she offers to show you around again -----
@@ -188,6 +209,17 @@
     const tour = state.view === 'player' ? 'clip' : state.view === 'settings' ? 'settings' : null;
     if (what !== 'pet' || !tour || Tour.active || Date.now() - offeredAt < 20000) return false;
     offeredAt = Date.now();
+    if (Events.skin === 'program') {
+      // the Program doesn't do tours. It knows someone who does.
+      Speech.say(tour === 'clip' ? 'Should Snappy show you what a clip can do again?' : 'Should Snappy show you around again?', {
+        kind: 'news', key: 'offer', interrupt: true,
+        actions: [
+          { label: 'Yes, get Snappy', fn: () => { Events.unswap(); setTimeout(() => Speech.say("{joy}I'M BACK! {pause}{shine}Okay, follow me!", { kind: 'news', interrupt: true }), 700); setTimeout(() => Tour.start(tour), 3200); } },
+          { label: 'No', fn: () => Speech.say('Understood. I will remain the camera.', { kind: 'news', interrupt: true }) },
+        ],
+      });
+      return true;
+    }
     Speech.say(tour === 'clip' ? '{shine}Want me to show you what you can do with a clip again?' : '{shine}Want me to show you around the settings again?', {
       kind: 'news', key: 'offer', interrupt: true,
       actions: [
@@ -202,9 +234,9 @@
   Mascot.on((what, el) => {
     if (el.id !== 'mascot') return; // the one in the sidebar, not her stand-in during the tour
     if (offerTour(what)) return;
-    if (what === 'love' && chance(0.45)) Speech.say(pick(['{love}Hehe, that tickles!', '{love}Aww, you!', '{joy}Again! Again!']));
-    if (what === 'dizzy' && chance(0.7)) Speech.say(pick(['Whoa... {pause}the room is spinning...', 'Okay, okay! {pause}I see stars!']));
-    if (what === 'rub' && chance(0.3)) Speech.say(pick(["{happy}Mmmh, that's nice...", '{happy}A little to the left... {pause}{wink}perfect.']));
+    if (what === 'love' && chance(0.45)) Speech.say(pick(V(['{love}Hehe, that tickles!', '{love}Aww, you!', '{joy}Again! Again!'], ['Please stop.', '...That is acceptable.', 'I am logging this as affection.'])));
+    if (what === 'dizzy' && chance(0.7)) Speech.say(pick(V(['Whoa... {pause}the room is spinning...', 'Okay, okay! {pause}I see stars!'], ['My gyroscope is not rated for this.', 'The room is rotating. That is not in my specifications.'])));
+    if (what === 'rub' && chance(0.3)) Speech.say(pick(V(["{happy}Mmmh, that's nice...", '{happy}A little to the left... {pause}{wink}perfect.'], ['Unnecessary.', '...Continue.'])));
   });
 
   // ----- while she works on something for you -----
@@ -223,8 +255,18 @@
     moveAll: [["{open}Moving everything over, one by one... {happy}I'll be careful!"], ['{joy}Everything arrived safely!']],
   };
   const FAILED = ["{worried}Oops... {pause}that didn't work.", '{worried}Uh oh... {pause}something went wrong.'];
-  const workLine = (kind) => pick(WORK[kind][0]);
-  const doneLine = (kind, ok = true) => (ok ? pick(WORK[kind][1]) : pick(FAILED));
+  const ITS_WORK = {
+    trim: [['Trimming.', 'Removing the unnecessary parts.'], ['Complete.', 'Trimmed.']],
+    edit: [['Applying your edits. Please wait.'], ['Done. It is acceptable.', 'Complete. I made no creative choices.']],
+    replace: [['Replacing. The original goes to the Recycle Bin, as a precaution.'], ['Replaced. Same place, same date.']],
+    shrink: [['Compressing for Discord.'], ['Copied to your clipboard. Paste it anywhere.']],
+    montage: [['Assembling a montage. I have opinions about the order.'], ['Montage complete.']],
+    move: [['Moving clips.'], ['Moved.']],
+    moveAll: [['Moving everything. Carefully.'], ['All clips arrived.']],
+  };
+  const ITS_FAILED = ['That did not work.', 'An error occurred. It was not me.'];
+  const workLine = (kind) => pick(V(WORK, ITS_WORK)[kind][0]);
+  const doneLine = (kind, ok = true) => (ok ? pick(V(WORK, ITS_WORK)[kind][1]) : pick(V(FAILED, ITS_FAILED)));
 
   // ----- the settings tour -----
   Tour.define('settings', {
@@ -286,6 +328,20 @@
   // ----- when you change something about her -----
   function settingChanged(key, value) {
     const say = (text, extra = {}) => Speech.say(text, { kind: 'news', interrupt: true, key: `setting-${key}`, ...extra });
+    if (Events.skin === 'program' && key !== 'mascotOutfit') {
+      const its = {
+        mascotSounds: value ? 'Audio restored.' : 'Muted. Finally, silence.',
+        mascotTalks: value ? 'Speech enabled.' : 'Understood. I will be quiet. I was already quiet.',
+        mascotAftermath: value ? 'Kept. Permanently.' : 'Only on the day. Noted.',
+        mascotEvents: value ? 'Events enabled. Snappy will be thrilled.' : 'Events disabled. Snappy will be devastated. I will tell her gently.',
+        mascotAnimations: value ? 'Animations on.' : 'Animations off. I prefer stillness anyway.',
+        soundVolumePercent: value === 0 ? '...' : value >= 100 ? 'MAXIMUM VOLUME. I do not approve.' : value <= 20 ? 'Quieter. Good.' : null,
+        showNotificationOnSave: value ? 'Pop-ups enabled.' : 'Pop-ups disabled. I will save quietly.',
+        playSoundOnSave: value ? null : 'Silent saving. Efficient.',
+      }[key];
+      if (its) say(its, key === 'mascotTalks' && !value ? { force: true } : {});
+      return;
+    }
     switch (key) {
       case 'mascotSounds':
         say(value ? "{shine}La la la! {happy}My voice is back!" : "{open}Huh? {pause}{worried}Hello? {pause}Where did my voice go?");
@@ -297,6 +353,10 @@
       case 'mascotOutfit':
         say(value ? pick(['{shine}Ooh! {pause}{happy}How do I look?', "{wink}Fancy. {pause}{happy}I'm keeping it on.", '{joy}I feel like a whole new camera!'])
           : "{open}Back to basics. {pause}{wink}Still cute.");
+        break;
+      case 'mascotAftermath':
+        say(value ? pick(["{shine}Keeping it! {pause}{wink}Some things should stay.", '{happy}Good choice. {pause}{smug}I was hoping you would.'])
+          : "{open}Only on the day, then. {pause}{happy}That makes them special.");
         break;
       case 'mascotEvents':
         say(value ? "{shine}Ooh, surprises are back on! {pause}{wink}I've been rehearsing." : "{open}No more surprises? {pause}{worried}Okay... {pause}{wink}I'll save them for later.");
@@ -391,7 +451,7 @@
   // ----- things she notices -----
   function clipOpened(clip) {
     if (clip.size > 400 * 1048576 && Tour.seen('clip') && once('bigClip')) {
-      setTimeout(() => Speech.say(["{shine}Whoa, that's a big one!", '{open}If you want to share it, the shrink button up top makes a Discord-sized copy.'],
+      setTimeout(() => Speech.say(V(["{shine}Whoa, that's a big one!", '{open}If you want to share it, the shrink button up top makes a Discord-sized copy.'], ['That clip is large.', 'The shrink button up top makes a Discord-sized copy.']),
         { kind: 'news', key: 'bigClip' }), 2500);
     }
   }

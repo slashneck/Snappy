@@ -427,7 +427,8 @@
 
 /* only one Snappy on screen at a time */
 .mascot { transition: opacity .3s ease; }
-.snappy-solo .mascot:not(.lead) { opacity: 0 !important; }
+/* (a picture of her in a frame is not another her) */
+.snappy-solo .mascot:not(.lead):not(.picture) { opacity: 0 !important; }
 /* the moment one copy of her hands over to another, nothing fades */
 .snappy-swap .mascot, .snappy-swap .mascot * { transition: none !important; }
 

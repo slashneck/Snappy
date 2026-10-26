@@ -620,4 +620,5 @@
   Events.define('snapplease', {
     tier: 'game', title: 'Snap, Please', hint: 'She got a job at the border. It does not last.', run: snapPlease, weight: 1,
   });
+  Events.aftermath('snapplease', { label: 'The entry stamp', marks: [{ at: '#libraryView .title-block', cls: 'af-entry', html: 'APPROVED' }] });
 })();

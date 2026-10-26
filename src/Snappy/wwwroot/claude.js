@@ -819,6 +819,7 @@
     tier: 'legendary', title: 'Hello, World', hint: 'Someday, the one who wrote her stops by.', run: helloWorld, weight: 1,
     when: () => Events.count >= 6,
   });
+  Events.aftermath('claude', { label: 'A little terminal', marks: [{ at: '.brand', cls: 'af-pic af-term', html: '&gt;<b></b>' }] });
   Events.define('debug', {
     tier: 'legendary', title: 'Breakpoint', hint: 'Someone left the terminal open.', run: breakpoint, weight: 1,
     after: ['claude'],
@@ -961,7 +962,8 @@
     tier: 'early', title: 'Early Bird', hint: 'You were here before Snappy could talk.', run: earlyBird,
     hidden: () => !state.settings?.earlyBird,
   });
-  Events.outfit('wings', { name: 'Wings', markup: WINGS, from: 'claude' });
+  // (the wings were only for the day of the story, and that story ends with them fading away)
+  Events.outfit('wings', { name: 'Wings', markup: WINGS, from: 'claude', today: false });
   Events.outfit('bowtie', { name: 'Her old bow tie', markup: BOW_TIE, from: 'earlybird' });
   window.ClaudeKit = { terminal, claudeVoice, glitch, commit };
 })();

@@ -633,3 +633,12 @@ input[type="range"]::-webkit-slider-thumb { appearance: none; width: 14px; heigh
 /* a settings section Snappy pointed you to glows for a moment */
 .settings-group.spotlight { animation: section-glow 2.4s ease-out .3s; border-radius: var(--radius); }
 @keyframes section-glow { 0%, 100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); } 15%, 55% { box-shadow: 0 0 0 2px rgba(255, 255, 255, .35); } }
+
+/* dialogs settle in, and fade back out when they close */
+.modal-backdrop .modal { animation: modal-in .32s var(--spring, ease-out) both; }
+.modal-backdrop.closing { animation: modal-fade .17s ease forwards; pointer-events: none; }
+.modal-backdrop.closing .modal { animation: modal-out .17s ease forwards; }
+@keyframes modal-in { from { opacity: 0; scale: .95; translate: 0 8px; } }
+@keyframes modal-out { to { opacity: 0; scale: .97; translate: 0 4px; } }
+@keyframes modal-fade { from { opacity: 1; } to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .modal-backdrop .modal, .modal-backdrop.closing, .modal-backdrop.closing .modal { animation-duration: .01s; } }

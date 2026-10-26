@@ -116,11 +116,12 @@
     const plats = [];
     let camera = 0, top = H - 20, height = 0, alive = true, springAt = null, flew = false;
     // The way up is always solid: each solid platform is within an easy jump of the last. Brown ones (they snap)
-    // are only ever extras in between.
+    // are only ever extras in between. Higher up there are more moving ones (and faster), and more minions.
     const make = (y) => {
-      const roll = Math.random(), high = y < H - 100;
-      plats.push({ x: 8 + Math.random() * (W - 48), y, w: 32, kind: high && roll < 0.1 ? 'moving' : 'still', dir: Math.random() < 0.5 ? -1 : 1,
-        spring: roll > 0.9, foe: y < -200 && roll > 0.3 && roll < 0.38, hat: y < -300 && roll > 0.5 && roll < 0.53, broken: 0, gone: false });
+      const roll = Math.random(), high = y < H - 100, up = Math.min(1, -y / 9000);
+      plats.push({ x: 8 + Math.random() * (W - 48), y, w: 32, kind: high && roll < 0.1 + up * 0.3 ? 'moving' : 'still', dir: Math.random() < 0.5 ? -1 : 1,
+        speed: 0.8 + up * 0.7, spring: roll > 0.9, foe: y < -200 && roll > 0.3 && roll < 0.38 + up * 0.06, hat: y < -300 && roll > 0.5 && roll < 0.53,
+        broken: 0, gone: false });
       if (high && Math.random() < 0.3) plats.push({ x: 8 + Math.random() * (W - 48), y: y + 14 + Math.random() * 10, w: 32, kind: 'brittle', broken: 0, gone: false });
     };
     make(top);
@@ -145,7 +146,7 @@
       for (const p of plats) {
         if (p.gone) continue;
         if (p.broken) { p.broken += 0.06 * dt; if (p.broken > 3) p.gone = true; continue; }
-        if (p.kind === 'moving') { p.x += p.dir * 0.8 * dt; if (p.x < 0 || p.x > W - p.w) p.dir *= -1; }
+        if (p.kind === 'moving') { p.x += p.dir * p.speed * dt; if (p.x < 0 || p.x > W - p.w) p.dir *= -1; }
         const overlap = me.x + 9 > p.x && me.x - 9 < p.x + p.w;
         if (flying) continue;
         // the propeller hat: touch it and up she goes
@@ -167,7 +168,8 @@
       }
       // the page scrolls with her, and new platforms appear above
       if (me.y < camera + H * 0.42) camera = me.y - H * 0.42;
-      while (top > camera - 60) { top -= 28 + Math.random() * 16 + Math.min(24, -camera / 250); make(top); }
+      // (never more than about 80 apart: a normal bounce goes over a hundred)
+      while (top > camera - 60) { top -= 28 + Math.random() * 16 + Math.min(36, -camera / 180); make(top); }
       for (const p of plats) if (p.y > camera + H + 20) p.gone = true;
       for (let i = plats.length - 1; i >= 0; i--) if (plats[i].gone && plats[i].y > camera + H) plats.splice(i, 1);
       height = Math.max(height, Math.floor((H - 60 - me.y) / 10));
@@ -217,6 +219,6 @@
   }
 
   Events.define('doodle', {
-    tier: 'game', title: 'Doodle Snappy', hint: 'Up, up, up. Mind the brown ones.', run: doodle, weight: 1, again: true,
+    tier: 'game', title: 'Doodle Snappy', hint: 'Up, up, up. Mind the brown ones.', run: doodle, weight: 1, arcade: true, unit: 'high',
   });
 })();

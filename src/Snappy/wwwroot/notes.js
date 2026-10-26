@@ -14,9 +14,56 @@
     <circle cx="150" cy="-9" r="8" fill="#ffd23f" stroke="#0a0a0a" stroke-width="4"/></g>`;
 
   // Each version: a title, what she says first, the list, and what she says at the end. An item can come with a remark
-  // of hers (say) and something she does while saying it (gag), or be read out by the Program (by: 'program').
+  // of hers (say) and something she does while saying it (gag), or be read out by the Program (by: 'program'), which
+  // then has the exchange in `talk` with her (['p' or 's', line] each), or its usual one.
   // Achievements are never named here: there are some to find, that's all.
   const NOTES = {
+    '1.4.0': {
+      title: 'The one with the arcade',
+      intro: ['{shine}Patch notes! {pause}Again!', '{smug}I have been practicing my reading voice.'],
+      sections: [
+        { name: 'New', kind: 'new', items: [
+          { text: 'The arcade: the little controller next to her name. Two score games a day, one try each, and all your best scores in one place.', say: '{shine}Insert coin!', gag: 'coin' },
+          { text: 'Eight new games. Some of them may look very familiar. One of them is about taking photos. Finally, her actual job.', say: '{joy}Eight! {pause}I counted twice.', gag: 'games' },
+          { text: 'One of the arcade games comes back every day until somebody beats its boss stage.', say: '{angry}Somebody. {pause}{smug}Me. {pause}{flat}Eventually.' },
+          { text: 'Stories leave a little something behind until midnight: a new name for the app, a sticker, a tag under her name. One of those things is very small, has two eyes, and will not leave her side. Your favourite can stay for good: Settings, Snappy, Aftermath.', say: '{love}He stays.', gag: 'little' },
+          { text: 'After a story she keeps its outfit on for the rest of the day.', say: '{shine}I worked hard for this look.' },
+          { text: 'Some stories hand you the controls now. Mostly.', say: '{wink}Trust me.' },
+          { text: 'A terminal, for developers. Find developer mode the way you would on a phone, and it shows up next to the arcade. Then type help. Not every command is on the list.', say: '{smug}I am not allowed in there. {pause}{wink}I go in there all the time.' },
+          { text: 'After one particular story there is a switch in her corner. Flip it and she is the Program, voice and all.', say: '{worried}It is roomy in there. {pause}And very serious.' },
+          { text: "Every version's patch notes, to read again whenever you like: Settings, About.", say: '{smug}Including these. {pause}{wink}Very meta.' },
+        ] },
+        { name: 'Better', kind: 'better', items: [
+          { text: 'Tours ask first, and you can skip them halfway.', say: "{happy}You're allowed to say Nah now. {pause}{sad}...I'll be fine." },
+          { text: 'Achievements are always there, in Settings, Snappy. The old secret code is just an achievement now.', say: '{wink}Still a secret, though.' },
+          { text: 'Every game got a balancing pass: friendlier starts, tougher later on, one try a run with your best kept, and one of them finally wants you to duck.', say: '{smug}I was already ducking. {pause}Professionally.' },
+          { text: 'Games run at the same speed on every screen. On fast monitors some of them used to run more than twice as fast.', gag: 'fast' },
+          { text: 'Choices come on a little ballot now. Mark one box.', say: '{smug}Democracy!' },
+          { text: 'Smoother stories: lights that glide, chases that flow, a proper construction site, and no more words on top of other words.', say: '{shine}Cinematic.' },
+          { text: 'Subtitles have a dark outline, so they read over anything. Dialogs fade in and out instead of popping.', say: '{happy}Even on white paper.' },
+        ] },
+        { name: 'Fixed', kind: 'fixed', items: [
+          { text: "After an update she comes back quietly, in the tray. Nothing ever plays unless you're in her window and using it.", say: '{happy}I wait my turn now.' },
+          { text: 'Skipping the patch notes no longer brings them back.', say: "{smug}You could skip these right now. {pause}{sad}...please don't." },
+          { text: 'Tours no longer skip text, and she no longer talks without saying anything.', say: '{wink}I always have something to say.' },
+        ] },
+        { name: 'Known issues', kind: 'known', items: [
+          { text: 'All the games are incredibly unbalanced. Too easy, too hard, or unplayable.', by: 'program', talk: [
+            ['s', '{flat}The creator will balance them... {pause}eventually.'],
+            ['p', 'The creator says this update already balanced them.'],
+            ['s', '{shock}...already?'],
+            ['p', 'Some of them.'],
+            ['s', '{smug}See? {pause}Eventually.'],
+          ] },
+          { text: 'Snappy still cannot fly.', by: 'program', talk: [
+            ['s', '{angry}I had a PROPELLER HAT.'],
+            ['p', 'It was drawn on graph paper.'],
+            ['s', "{smug}...I'll take it."],
+          ] },
+        ] },
+      ],
+      outro: ["{happy}That's everything!", '{wink}See you in the arcade.'],
+    },
     '1.3.0': {
       title: 'The one where she comes to life',
       intro: ['{shine}Okay! {pause}{happy}Patch notes!', "{wink}I've always wanted to read some out loud."],
@@ -60,6 +107,86 @@
       await ctx.wait(650);
       await S(line);
     },
+    // a coin, flipped up and over into the arcade's controller next to her name
+    async coin(ctx, a, S, line) {
+      const btn = document.querySelector('.brand .arc-btn')?.getBoundingClientRect();
+      const from = { x: a.center.x, y: a.y + a.size * 0.2 };
+      const to = btn?.width ? { x: btn.left + btn.width / 2, y: btn.top + btn.height / 2 } : { x: from.x, y: -40 };
+      const coin = document.createElement('div');
+      coin.className = 'pn-coin';
+      document.body.appendChild(coin);
+      ctx.onEnd(() => coin.remove());
+      a.bounce();
+      Speech.tune('coin', 0.6);
+      const start = performance.now(), ms = 1100, lift = Math.min(220, Math.abs(to.x - from.x) * 0.35 + 90);
+      for (;;) {
+        const k = Math.min(1, (performance.now() - start) / ms), e = k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
+        const x = from.x + (to.x - from.x) * e, y = from.y + (to.y - from.y) * e - Math.sin(e * Math.PI) * lift;
+        coin.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%) scaleX(${Math.cos(k * Math.PI * 7)}) scale(${1 - k * 0.45})`;
+        if (k >= 1 || ctx.cancelled) break;
+        await new Promise((res) => requestAnimationFrame(res));
+      }
+      coin.remove();
+      // clunk, and the controller lights up
+      const ring = document.createElement('div');
+      ring.className = 'pn-ring';
+      Object.assign(ring.style, { left: `${to.x}px`, top: `${to.y}px` });
+      document.body.appendChild(ring);
+      ctx.onEnd(() => ring.remove());
+      setTimeout(() => ring.remove(), 1300);
+      Speech.tune('chime', 0.5);
+      a.lookAt(to.x, to.y, true);
+      await S(line);
+    },
+    // eight little cards fan out around her, one per new game, and tuck themselves away again
+    async games(ctx, a, S, line) {
+      const LOOK = [['♪', '#ff6a8e'], ['◉', '#58b4ff'], ['♠', '#c27cff'], ['✚', '#7fdc6c'], ['▲', '#ffc94a'], ['☠', '#ff9a6b'], ['★', '#ffd84a'], ['▣', '#7ee8ff']];
+      const c = a.center, r = a.size * 0.95;
+      const tiles = LOOK.map(([glyph, color], i) => {
+        const el = document.createElement('div');
+        el.className = 'pn-tile';
+        el.textContent = glyph;
+        el.style.setProperty('--c', color);
+        Object.assign(el.style, { left: `${c.x}px`, top: `${c.y}px` });
+        document.body.appendChild(el);
+        const ang = Math.PI * (1.08 + (i / (LOOK.length - 1)) * 0.84);
+        return { el, x: c.x + Math.cos(ang) * r * 1.3, y: c.y + Math.sin(ang) * r - 6 };
+      });
+      ctx.onEnd(() => tiles.forEach((t) => t.el.remove()));
+      for (const t of tiles) {
+        void t.el.offsetWidth;
+        Object.assign(t.el.style, { left: `${t.x}px`, top: `${t.y}px` });
+        t.el.classList.add('in');
+        Speech.tune('tick', 0.45);
+        await ctx.wait(90);
+      }
+      a.twirl();
+      await S(line);
+      for (const t of tiles) Object.assign(t.el.style, { left: `${c.x}px`, top: `${c.y}px` });
+      tiles.forEach((t) => t.el.classList.remove('in'));
+      await ctx.wait(450);
+      tiles.forEach((t) => t.el.remove());
+    },
+    // the little clip from that story, at her side for the rest of the notes
+    async little(ctx, a, S, line) {
+      const markup = Events.markup('littleclip');
+      if (markup) {
+        a.dress(markup);
+        snappy.call('sound.blip', { pitch: 1900, volume: Speech.volume * 0.7 }).catch(() => {});
+        await ctx.wait(500);
+      }
+      await S(line);
+    },
+    // the same shuffle as a game on a fast screen (far too quick), then the way it should be
+    async fast(ctx, a, S) {
+      a.root.classList.add('pn-fast');
+      await S('{shock}Before...', { hold: 1300 });
+      a.root.classList.remove('pn-fast');
+      void a.root.offsetWidth;
+      a.root.classList.add('pn-smooth');
+      await S('{happy}After!', { hold: 1300 });
+      a.root.classList.remove('pn-smooth');
+    },
     // a little sideways shuffle with frames missing, then the same one smooth
     async stutter(ctx, a, S) {
       a.root.classList.add('pn-choppy');
@@ -75,8 +202,9 @@
   const list = (notes) => notes.sections.map((sec) => `<section class="pn-sec ${sec.kind}"><h4>${esc(sec.name)}</h4>
     ${sec.items.map((it) => `<div class="pn-item${it.by ? ` by-${it.by}` : ''}"><i></i><span>${esc(it.text)}</span></div>`).join('')}</section>`).join('');
 
+  let reading = null;
   async function read(ctx) {
-    const version = state.version;
+    const version = reading || state.version;
     const notes = NOTES[version];
     if (!notes) return;
     const W = innerWidth, H = innerHeight, size = 124;
@@ -128,10 +256,14 @@
           const talk = Program.dialogue(a, prog);
           await ctx.wait(700);
           await talk.program(it.text, { hold: 900 });
-          Mascot.flash('error', 650);
-          await talk.snappy('{angry}HEY!', { hold: 600 });
-          await talk.program('Working as intended.', { hold: 1100 });
-          await talk.snappy("{smug}...I'll take it.", { hold: 900 });
+          if (it.talk) {
+            for (const [who, line] of it.talk) await (who === 'p' ? talk.program : talk.snappy)(line, { hold: 900 });
+          } else {
+            Mascot.flash('error', 650);
+            await talk.snappy('{angry}HEY!', { hold: 600 });
+            await talk.program('Working as intended.', { hold: 1100 });
+            await talk.snappy("{smug}...I'll take it.", { hold: 900 });
+          }
           prog.hush();
           prog.leave();
           prog = null;
@@ -167,28 +299,33 @@
       <div class="pn-list">${list(notes)}</div>
       <div class="modal-actions"><button class="btn" data-close>Got it</button></div></div>`;
     document.body.appendChild(root);
-    const close = () => { root.remove(); removeEventListener('keydown', onKey, true); };
+    const close = () => { softRemove(root); removeEventListener('keydown', onKey, true); };
     const onKey = (e) => { if (e.key === 'Escape') { close(); e.stopPropagation(); } };
     addEventListener('keydown', onKey, true);
     root.addEventListener('click', (e) => { if (e.target === root || e.target.closest('[data-close]')) close(); });
   }
 
-  // shown once, read to the end or skipped
+  // Shown once: they count as seen the moment they start, so skipping them (or closing the window halfway) doesn't
+  // bring them back. Settings, About has them to read again, older versions too.
   async function seen() {
     if (state.settings?.whatsNewFor) await saveSettings((s) => { s.whatsNewFor = null; });
   }
 
   async function show(version = state.version) {
     if (!NOTES[version]) return;
-    if (Speech.enabled && version === state.version) await Events.play('patchnotes');
-    else quiet(version);
-    seen();
+    if (version === state.version) seen();
+    if (Speech.enabled) {
+      reading = version;
+      try { await Events.play('patchnotes'); } finally { reading = null; }
+    } else quiet(version);
   }
 
   Events.define('patchnotes', { system: true, title: 'Patch notes', run: read });
 
   window.Notes = {
     has: (version) => !!NOTES[version],
+    // every version with notes, newest first
+    versions: () => Object.keys(NOTES).sort((a, b) => b.localeCompare(a, undefined, { numeric: true })),
     due: () => !!NOTES[state.version] && state.settings?.whatsNewFor === state.version,
     show,
   };

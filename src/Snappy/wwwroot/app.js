@@ -104,6 +104,23 @@ function showMenu(x, y, items) {
 }
 const hideMenu = () => { $('#menu').hidden = true; };
 
+// Dialogs fade out instead of vanishing: hidden ones (the app's own) or removed ones (made on the fly).
+function softHide(el) {
+  if (!el || el.hidden || el.classList.contains('closing')) return;
+  el.classList.add('closing');
+  el._closing = setTimeout(() => { el.hidden = true; el.classList.remove('closing'); }, 170);
+}
+function softShow(el) {
+  clearTimeout(el._closing);
+  el.classList.remove('closing');
+  el.hidden = false;
+}
+function softRemove(el) {
+  if (!el?.isConnected || el.classList.contains('closing')) return;
+  el.classList.add('closing');
+  setTimeout(() => el.remove(), 170);
+}
+
 function modal({ title, text = '', input = null, ok = 'OK', danger = false }) {
   return new Promise((resolve) => {
     const root = $('#modal'), inp = $('#modalInput'), okBtn = $('#modalOk'), cancelBtn = $('#modalCancel');
@@ -114,10 +131,10 @@ function modal({ title, text = '', input = null, ok = 'OK', danger = false }) {
     inp.value = input ?? '';
     okBtn.textContent = ok;
     okBtn.className = danger ? 'btn danger' : 'btn';
-    root.hidden = false;
+    softShow(root);
     setTimeout(() => (input !== null ? (inp.focus(), inp.select()) : okBtn.focus()), 0);
     const finish = (confirmed) => {
-      root.hidden = true;
+      softHide(root);
       root.removeEventListener('keydown', onKey);
       okBtn.onclick = cancelBtn.onclick = root.onmousedown = null;
       resolve(input !== null ? (confirmed ? inp.value.trim() || null : null) : confirmed);
@@ -204,18 +221,18 @@ const importState = { scan: null, running: false };
 
 function importDialog(html) {
   $('#importBody').innerHTML = html;
-  $('#importDialog').hidden = false;
+  softShow($('#importDialog'));
 }
 
 async function startImport() {
-  if (importState.running) { $('#importDialog').hidden = false; return; }
+  if (importState.running) { softShow($('#importDialog')); return; }
   let folder;
   try { folder = await snappy.call('import.pickFolder'); } catch (err) { toast({ kind: 'error', title: 'Couldn’t open the folder picker', sub: err.message }); return; }
   if (!folder) return;
   importDialog(`<h3>Import clips</h3><p>Looking through ${esc(folder)}…</p>`);
   let scan;
   try { scan = await snappy.call('import.scan', { folder }); }
-  catch (err) { $('#importDialog').hidden = true; toast({ kind: 'error', title: 'Couldn’t read that folder', sub: err.message }); return; }
+  catch (err) { softHide($('#importDialog')); toast({ kind: 'error', title: 'Couldn’t read that folder', sub: err.message }); return; }
   importState.scan = scan;
   if (!scan.count) {
     importDialog(`<h3>No clips found</h3><p>There are no videos in ${esc(folder)} or the folders inside it.</p>
@@ -264,7 +281,7 @@ async function runImport() {
 function finishImport(r) {
   importState.running = false;
   Mascot.release('import');
-  $('#importDialog').hidden = true;
+  softHide($('#importDialog'));
   refreshLibrary();
   if (r.error) { toast({ kind: 'error', title: 'Import didn’t finish', sub: r.error, timeout: 9000 }); return; }
   const extra = [r.skipped ? `${r.skipped} were already here` : '', r.failed ? `${r.failed} couldn’t be read (see the log)` : ''].filter(Boolean).join(', ');
@@ -690,7 +707,7 @@ function openClip(clip, { autoplay = true } = {}) {
   updateTrimUI();
   renderTime();
   window.Editor?.open(clip);
-  if (!Tour.seen('clip') && Speech.enabled) setTimeout(() => { if (state.current === clip && state.view === 'player') Tour.start('clip'); }, 1300);
+  if (!Tour.seen('clip')) setTimeout(() => { if (state.current === clip && state.view === 'player') Tour.offer('clip'); }, 1300);
   Talk.clipOpened(clip);
 }
 
@@ -943,7 +960,7 @@ async function openSettings(section) {
     void group?.offsetWidth;
     group?.classList.add('spotlight');
   } else if (!Tour.seen('settings')) {
-    setTimeout(() => { if (state.view === 'settings') Tour.start('settings'); }, 350);
+    setTimeout(() => { if (state.view === 'settings') Tour.offer('settings'); }, 350);
   }
 }
 
@@ -1071,9 +1088,11 @@ function renderSettings() {
       ${s.mascotTalks !== false ? row('Events and surprises', 'Once in a while, every few days at most, she gets up to something: a little adventure, or a whole story. Skip any of them with Esc.', toggle('mascotEvents', s.mascotEvents !== false)) : ''}
       ${row('Show me around', 'Snappy walks you through the settings, or through everything you can do with a clip.',
         '<button class="btn ghost" data-action="tourAgain">Settings</button><button class="btn ghost" data-action="tourClip">Clips</button>')}
-      ${Events.outfits.length ? row('Outfit', 'Anything she has worn in an event you watched to the end. On special days she dresses up by herself, unless she is already wearing something.',
+      ${Events.outfits.length ? row('Outfit', 'Anything she has worn in an event you watched to the end. After an event she keeps its outfit on until midnight, and on special days she dresses up by herself, unless something is picked here.',
         select('mascotOutfit', opt('', 'None', s.mascotOutfit || '') + Events.outfits.map((x) => opt(x.id, x.name, s.mascotOutfit || '')).join(''))) : ''}
-      ${Events.unlocked ? row('Achievements', 'Every event and secret you have found so far, ready to watch again.', '<button class="btn ghost" data-action="achievements">Open</button>') : ''}
+      ${Events.aftermaths.length ? row('Aftermath', 'Some events leave a little something behind in the app until midnight. Pick one to keep for good.',
+        select('mascotAftermath', opt('', 'Only on the day', s.mascotAftermath || '') + Events.aftermaths.map((x) => opt(x.id, x.label, s.mascotAftermath || '')).join(''))) : ''}
+      ${row('Achievements', 'Every event and secret you have found so far, ready to watch again.', '<button class="btn ghost" data-action="achievements">Open</button>')}
     </div>
 
     <div class="settings-group" id="set-general"><h2>General</h2>
@@ -1085,7 +1104,9 @@ function renderSettings() {
     <div class="settings-group" id="set-about"><h2>About</h2>
       ${updateRowHtml()}
       ${row('Update automatically', 'Checks GitHub every few hours. A new version downloads in the background and installs once your PC has been idle for 10 minutes.', toggle('checkForUpdates', s.checkForUpdates))}
-      ${Notes.has(state.version) ? row("What's new", `Everything that changed in version ${esc(state.version)}, the way Snappy tells it.`, '<button class="btn ghost" data-action="whatsNew">Show me</button>') : ''}
+      ${Notes.versions().length ? row('Patch notes', 'Everything that changed, version by version, the way Snappy tells it.',
+        Notes.versions().slice(0, 4).map((v) => `<button class="btn ghost" data-action="whatsNew" data-version="${esc(v)}">${esc(v)}</button>`).join('')) : ''}
+      ${s.developerMode || Terminal.found() ? row('Developer mode', 'The terminal next to the arcade. Off hides it again.', toggle('developerMode', !!s.developerMode)) : ''}
       ${row('Source code', 'Snappy is free software under the GPL 3.0 license.', '<button class="btn ghost" data-action="openGithub">Open GitHub</button>')}
       ${row('Licenses and credits', 'The projects Snappy is built with.', '<button class="btn ghost" data-action="licenses">View</button>')}
       ${row('Log file', 'Handy when reporting a problem.', '<button class="btn ghost" data-action="openLog">Open</button>')}
@@ -1348,7 +1369,7 @@ function bind() {
     const act = e.target.closest('[data-import]')?.dataset.import;
     if (act === 'go') runImport();
     else if (act === 'stop') { snappy.call('import.cancel').catch(() => {}); $('#importNow').textContent = 'Stopping after this clip…'; }
-    else if (act === 'close' || act === 'hide' || (e.target.id === 'importDialog' && !importState.running)) $('#importDialog').hidden = true;
+    else if (act === 'close' || act === 'hide' || (e.target.id === 'importDialog' && !importState.running)) softHide($('#importDialog'));
   });
   $('#cancelSelectBtn').addEventListener('click', () => setSelecting(false));
   $('#selectAllBtn').addEventListener('click', () => { visibleClips().forEach((c) => state.selected.add(c.id)); renderGrid(); });
@@ -1574,7 +1595,7 @@ function bind() {
         if (value !== 'off') s.micDeviceId = value === 'default' ? '' : value;
       } else if (key === 'monitorDeviceName' || key === 'encoder' || key === 'trimMode') {
         s[key] = value;
-      } else if (key === 'mascotOutfit') {
+      } else if (key === 'mascotOutfit' || key === 'mascotAftermath') {
         s[key] = value || null;
       } else if (el.type === 'checkbox') {
         s[key] = value;
@@ -1583,7 +1604,9 @@ function bind() {
       }
     });
     if (key === 'soundVolumePercent') Speech.sample(); // let them hear the new volume
-    Talk.settingChanged(key, el.type === 'checkbox' || key === 'mascotOutfit' ? value : Number(value));
+    if (key === 'mascotAftermath') Events.remark();
+    if (key === 'developerMode') Terminal.refresh();
+    Talk.settingChanged(key, el.type === 'checkbox' || key === 'mascotOutfit' || key === 'mascotAftermath' ? value : Number(value));
   });
   form.addEventListener('click', async (e) => {
     const hk = e.target.closest('[data-hotkey]');
@@ -1633,7 +1656,7 @@ function bind() {
     } else if (action === 'achievements') {
       Events.list();
     } else if (action === 'whatsNew') {
-      Notes.show(state.version);
+      Notes.show(e.target.closest('[data-action]').dataset.version || state.version);
     } else if (action === 'tourAgain') {
       Tour.start('settings');
     } else if (action === 'tourClip') {
@@ -1646,7 +1669,7 @@ function bind() {
     } else if (action === 'openGithub' || action === 'openReleases') {
       snappy.call('app.openLink', { url: `https://github.com/slashneck/Snappy${action === 'openReleases' ? '/releases' : ''}` });
     } else if (action === 'licenses') {
-      $('#licenses').hidden = false;
+      softShow($('#licenses'));
       $('#licensesClose').focus();
     } else if (action === 'checkUpdate') {
       state.update = { ...(state.update || {}), state: 'checking' };
@@ -1663,7 +1686,7 @@ function bind() {
   $('#licenses').addEventListener('click', (e) => {
     const link = e.target.closest('[data-link]');
     if (link) snappy.call('app.openLink', { url: link.dataset.link });
-    else if (e.target.id === 'licenses' || e.target.id === 'licensesClose') $('#licenses').hidden = true;
+    else if (e.target.id === 'licenses' || e.target.id === 'licensesClose') softHide($('#licenses'));
   });
 
   // Menus close on outside click / scroll / resize
@@ -1675,7 +1698,7 @@ function bind() {
   document.addEventListener('keydown', (e) => {
     if (!$('#modal').hidden) return;
     if (!$('#licenses').hidden) {
-      if (e.key === 'Escape') $('#licenses').hidden = true;
+      if (e.key === 'Escape') softHide($('#licenses'));
       return;
     }
     if (e.key === 'Escape' && !$('#menu').hidden) { hideMenu(); return; }

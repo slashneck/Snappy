@@ -429,6 +429,22 @@ internal static class SnappySounds
         // the tiny games' jingle: a trombone hook over an oom-pah
         private static readonly double[] WareLead = { 392, 0, 523.3, 0, 659.3, 587.3, 523.3, 0, 440, 0, 523.3, 587.3, 659.3, 0, 784, 0 };
         private static readonly double[] WareBass = { 130.8, 174.6, 110, 196 };
+        // her rhythm game's song: 120 beats a minute, eight bars (A minor, F, C, G, A minor, F, G, E), one note per eighth
+        private static readonly double[] BeatRoots = { 110, 87.3, 130.8, 98, 110, 87.3, 98, 82.4 };
+        private static readonly double[] BeatLead = {
+            659.3, 0, 880, 0, 1046.5, 987.8, 880, 0, 698.5, 0, 880, 0, 1046.5, 0, 880, 784,
+            784, 0, 659.3, 0, 784, 0, 1046.5, 0, 987.8, 0, 1174.7, 0, 987.8, 880, 784, 0,
+            659.3, 659.3, 880, 0, 1046.5, 0, 1318.5, 0, 1174.7, 1046.5, 880, 0, 698.5, 0, 880, 0,
+            987.8, 0, 784, 0, 1174.7, 0, 987.8, 0, 830.6, 0, 987.8, 0, 1318.5, 0, 0, 0 };
+        // a neon night: 108 beats a minute, A minor, F, C, G, a beat each, the arpeggio in sixteenths
+        private static readonly double[] MiamiRoots = { 55, 43.65, 65.41, 49 };
+        private static readonly double[][] MiamiArp = { new[] { 440, 523.3, 659.3, 523.3 }, new[] { 349.2, 440, 523.3, 440 },
+            new[] { 329.6, 392, 523.3, 392 }, new[] { 293.7, 392, 493.9, 392 } };
+        // a sunny ride: G, E minor, C, D, plucked eighths over a bouncing bass and a shaker
+        private static readonly double[][] SafariChords = { new[] { 392, 493.9, 587.3, 783.99 }, new[] { 329.6, 392, 493.9, 659.3 },
+            new[] { 261.6, 329.6, 392, 523.3 }, new[] { 293.7, 370, 440, 587.3 } };
+        private static readonly double[] SafariRoots = { 98, 82.4, 65.4, 73.4 };
+        private static readonly int[] SafariPattern = { 0, 2, 1, 3, 2, 1, 3, 2 };
         // a dark library: slow piano arpeggios down from A minor, one chord a bar
         private static readonly double[] MysteryNotes = { 220, 261.6, 329.6, 440, 196, 246.9, 293.7, 392, 174.6, 220, 261.6, 349.2, 164.8, 207.7, 246.9, 329.6 };
         private static readonly double[] MysteryBass = { 110, 98, 87.3, 82.4 };
@@ -587,6 +603,31 @@ internal static class SnappySounds
                 new Note(WareLead[i], 0.14, i * 0.15, "trombone", WareLead[i] > 0 ? 0.06 : 0),
                 new Note(i % 2 == 0 ? WareBass[i / 4] : WareBass[i / 4] * 2, 0.12, i * 0.15, "triangle", 0.06),
                 new Note(0, 0.03, i * 0.15, "noise", i % 4 == 2 ? 0.05 : 0),
+            }).ToArray()),
+            // a song to tap along to: kick on every beat, snare on two and four, hi-hats, a bouncing bass and a lead
+            "beat" => Render(16, Enumerable.Range(0, 64).SelectMany(e => new[]
+            {
+                new Note(150, 0.15, e * 0.25, "sine", e % 2 == 0 ? 0.22 : 0, 0.3),
+                new Note(0, 0.12, e * 0.25, "noise", e % 8 == 2 || e % 8 == 6 ? 0.07 : 0),
+                new Note(0, 0.03, e * 0.25 + 0.125, "noise", 0.02),
+                new Note(BeatRoots[e / 8] * (e % 2 == 0 ? 1 : 2), 0.22, e * 0.25, "triangle", 0.06),
+                new Note(BeatLead[e], 0.22, e * 0.25, Gain: BeatLead[e] > 0 ? 0.03 : 0),
+            }).ToArray()),
+            // synthwave: a pumping bass, kick and snare, hi-hats, and a bright arpeggio, two bars
+            "miami" => Render(4.44, Enumerable.Range(0, 32).SelectMany(s => new[]
+            {
+                new Note(120, 0.16, s * 0.139, "sine", s % 4 == 0 ? 0.14 : 0, 0.35),
+                new Note(0, 0.12, s * 0.139, "noise", s % 8 == 4 ? 0.05 : 0),
+                new Note(0, 0.025, s * 0.139, "noise", 0.009),
+                new Note(MiamiRoots[s / 8] * (s % 4 == 2 ? 2 : 1), 0.12, s * 0.139, Gain: s % 2 == 0 ? 0.03 : 0),
+                new Note(MiamiArp[s / 8][s % 4] * 2, 0.11, s * 0.139, "triangle", 0.03),
+            }).ToArray()),
+            // a safari: plucked chords, a walking bass on the beat, a shaker on the off-beats, four bars
+            "safari" => Render(8.72, Enumerable.Range(0, 32).SelectMany(e => new[]
+            {
+                new Note(SafariChords[e / 8][SafariPattern[e % 8]], 0.5, e * 0.2725, "sine", 0.05),
+                new Note(SafariRoots[e / 8] * (e % 4 == 2 ? 1.5 : 1), 0.24, e * 0.2725, "triangle", e % 2 == 0 ? 0.055 : 0),
+                new Note(0, 0.04, e * 0.2725 + 0.136, "noise", 0.012),
             }).ToArray()),
             // something mysterious: soft piano notes falling through four chords
             "mystery" => Render(6.4, Enumerable.Range(0, 16).SelectMany(i => new[]

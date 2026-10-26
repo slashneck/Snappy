@@ -23,11 +23,8 @@
 
   async function homeIn(ctx, a, outfit) {
     const slot = document.getElementById('mascot');
+    // (she keeps it on: if it's one of her outfits it stays until midnight, if not it comes off once she's home)
     await a.home({ handOff: () => outfit && Mascot.dress(slot, outfit, true) });
-    if (!outfit) return;
-    await ctx.wait(1600);
-    Mascot.dress(slot, null);
-    await ctx.wait(400);
   }
 
   // A prop that isn't part of a stage (when the app has to stay visible).
@@ -164,11 +161,12 @@
     unpop(hired, 400);
     a.dress(TIE);
     // the app gets a new name
-    const brand = document.querySelector('.brand-name');
-    const oldName = brand?.textContent;
-    ctx.onEnd(() => { if (brand) brand.textContent = oldName; });
+    // (only the words: anything else in there, like a piece of tape, stays)
+    const words = [...(document.querySelector('.brand-name')?.childNodes || [])].find((n) => n.nodeType === Node.TEXT_NODE);
+    const oldName = words?.nodeValue;
+    ctx.onEnd(() => { if (words && !Events.lasting('job')) words.nodeValue = oldName; });
     const sign = card(stage, 'wd-corp', '<b>SNAPPY INDUSTRIES™</b><small>a very serious company</small>');
-    if (brand) brand.textContent = 'Snappy Industries';
+    if (words) words.nodeValue = 'Snappy Industries';
     Speech.tune('sting');
     await S('{shine}First order of business: {pause}this app is now called Snappy Industries.', { hold: 1000 });
     unpop(sign, 400);
@@ -208,7 +206,7 @@
     await S('{sad}...They were really good stickers.', { hold: 1300 });
     a.hush();
     unpop(fired, 400);
-    if (brand) brand.textContent = oldName;
+    if (words) words.nodeValue = oldName;
     a.dress(BOX);
     Mascot.face('flat');
     await ctx.wait(900);
@@ -220,7 +218,19 @@
     await S("{smug}You can take the CEO out of the company... {pause}but you can't take the company out of the CEO.", { hold: 1300 });
     a.hush();
     unpop(title, 300);
+    // on her way out she leaves her mark: the name, and a couple of the stickers on the big button
+    await S('{wink}The name stays, though. {pause}And so do some of the stickers.', { hold: 300 });
+    a.hush();
     stage.end();
+    const save = document.querySelector('.save-clip')?.getBoundingClientRect();
+    if (save?.width) {
+      await a.moveTo(save.right - a.size * 0.35, save.top - a.size * 0.75, { ms: 800 });
+      a.lookAt(save.left + save.width / 2, save.top, true);
+      a.bounce();
+    }
+    Speech.tune('coin', 0.5);
+    Events.leaveBehind('job');
+    await ctx.wait(1400);
     await homeIn(ctx, a, BOX);
   }
 
@@ -596,58 +606,74 @@
 
   // Emergency maintenance: a crack, a crew, scaffolding, and one piece of tape.
   async function maintenance(ctx) {
-    const W = innerWidth, H = innerHeight;
-    const { a, S, spot } = begin(ctx, { dim: false });
+    const { a, S } = begin(ctx, { dim: false });
     const grid = rect(document.querySelector('#grid'));
-    const cx = grid.left + Math.min(grid.width, 700) * 0.55, cy = grid.top + 150;
-    const crack = prop(ctx, 'wd-crack', '<svg viewBox="0 0 120 80"><path d="M2 40 L26 36 L34 22 L48 30 L62 12 L70 26 L88 24 L96 44 L118 40" fill="none" stroke="#0a0a0a" stroke-width="3.5" stroke-linejoin="round"/><path d="M48 30 L52 50 L44 66 M88 24 L94 8" fill="none" stroke="#0a0a0a" stroke-width="2.5"/></svg>');
-    crack.style.left = `${cx - 90}px`;
-    crack.style.top = `${cy - 60}px`;
-    await a.zoomTo(cx - 200, cy + 30, 112);
+    const cx = grid.left + Math.min(grid.width, 700) * 0.55, cy = grid.top + 170;
+    const at = (el, x, y) => { el.style.left = `${x}px`; el.style.top = `${y}px`; };
+    // a darker patch of the app to work in, so the site reads over whatever's in the library
+    const zone = prop(ctx, 'wd-zone');
+    at(zone, cx, cy);
+    pop(zone);
+    // the crack: it spreads out from one point, like glass
+    const LINES = ['M92 58 L70 50 L52 57 L30 44 L6 50', 'M92 58 L104 40 L99 24 L118 8', 'M92 58 L118 63 L137 54 L160 67 L176 60',
+      'M92 58 L84 79 L93 97 L81 116', 'M92 58 L111 81 L128 86', 'M70 50 L66 32', 'M137 54 L141 38'];
+    const lines = (cls) => LINES.map((d, i) => `<path class="${cls}" d="${d}" pathLength="1" style="--d:${i * 0.05}s"/>`).join('');
+    const crack = prop(ctx, 'wd-crack', `<svg viewBox="0 0 180 120">${lines('dark')}${lines('light')}<circle cx="92" cy="58" r="4.5" fill="#e8eef5"/></svg>`);
+    at(crack, cx - 90, cy - 60);
+    await a.zoomTo(cx - 330, cy - 40, 112);
     a.lookAt(cx, cy, true);
     Mascot.face('shock');
     pop(crack);
-    Speech.tune('fizz', 0.6);
+    Speech.tune('crack', 0.7);
     await ctx.wait(1000);
     await S('{shock}Wait. {pause}Is that... a crack?', { keepLook: true, hold: 700 });
     a.dress(HARDHAT);
     Mascot.face('flat');
     await S('{flat}This app is officially unsafe.', { hold: 600 });
     a.hush();
-    const signs = [];
-    for (const [dx, dy] of [[-140, 90], [120, 100], [10, 150]]) {
-      const s = prop(ctx, 'wd-sign', '<div>CAUTION</div>');
-      s.style.left = `${cx + dx}px`;
-      s.style.top = `${cy + dy}px`;
-      pop(s);
-      signs.push(s);
-      Speech.tune('key', 0.8);
-      await ctx.wait(300);
+    // caution tape, pulled across the site from one side to the other
+    const cordon = [];
+    for (const [dy, tilt] of [[118, 2.5], [92, -3]]) {
+      const t = prop(ctx, 'wd-cordon', `<span>${'CAUTION · '.repeat(8)}</span>`);
+      at(t, cx - 230, cy + dy);
+      t.style.rotate = `${tilt}deg`;
+      pop(t);
+      cordon.push(t);
+      Speech.tune('scratch', 0.35);
+      await ctx.wait(450);
     }
     await S('{shine}Crew! {pause}Get in here!', { hold: 200 });
     a.hush();
+    // scaffolding goes up: poles, braces, planks
+    const scaffold = prop(ctx, 'wd-scaffold', `<svg viewBox="0 0 380 240">
+      ${[14, 183, 352].map((x, i) => `<rect class="pole" x="${x}" y="0" width="12" height="240" rx="2" style="--d:${i * 0.08}s"/>`).join('')}
+      ${[[20, 52, 189, 182], [189, 52, 20, 182], [189, 52, 358, 182], [358, 52, 189, 182]].map(([x1, y1, x2, y2], i) => `<line class="brace" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" style="--d:${0.35 + i * 0.06}s"/>`).join('')}
+      ${[46, 176].map((y, i) => `<rect class="plank" x="0" y="${y}" width="380" height="13" rx="2" style="--d:${0.6 + i * 0.12}s"/>`).join('')}
+    </svg>`);
+    at(scaffold, cx - 190, cy - 116);
+    pop(scaffold);
+    Speech.tune('clunk', 0.6);
+    await ctx.wait(500);
+    Speech.tune('clunk', 0.5);
+    await ctx.wait(500);
+    // three of her, in hard hats, hopping up onto the planks
+    const spots = [[cx - 130, cy + 60], [cx + 80, cy + 60], [cx - 24, cy - 70]];
     const crew = [];
-    for (let i = 0; i < 3; i++) {
-      const m = prop(ctx, 'wd-crew', `<div class="wd-mini">${MINI(ACC.hardhat)}</div>`);
-      m.style.left = `${cx - 70 + i * 60}px`;
-      m.style.top = `${cy + 40}px`;
-      m.style.setProperty('--d', `${i * 0.15}s`);
+    for (const [i, [x, y]] of spots.entries()) {
+      const m = prop(ctx, 'wd-crew', `<div class="wd-mini">${MINI(ACC.hardhat)}</div><i class="wd-hammer"></i>`);
+      at(m, x, y - 50);
+      m.style.setProperty('--d', `${i * 0.11}s`);
+      m.style.setProperty('--from', `${a.x + a.size / 2 - x}px`);
       pop(m);
       crew.push(m);
-      Speech.tune('key', 0.7);
-      await ctx.wait(250);
+      snappy.call('sound.blip', { pitch: 900 + i * 120, volume: Speech.volume * 0.7 }).catch(() => {});
+      await ctx.wait(320);
     }
-    const scaffold = prop(ctx, 'wd-scaffold');
-    scaffold.style.left = `${cx - 200}px`;
-    scaffold.style.top = `${cy - 160}px`;
-    pop(scaffold);
-    Speech.tune('whoosh');
+    await ctx.wait(400);
     for (const m of crew) m.classList.add('hammer');
-    for (let i = 0; i < 10; i++) { Speech.tune('key', 1); await ctx.wait(230); }
+    for (let i = 0; i < 8; i++) { Speech.tune('key', 1); await ctx.wait(230); }
     await S('{happy}Look at them go.', { hold: 900 });
-    scaffold.classList.add('more');
-    Speech.tune('whoosh');
-    for (let i = 0; i < 8; i++) { Speech.tune('key', 1); await ctx.wait(220); }
+    for (let i = 0; i < 6; i++) { Speech.tune('key', 1); await ctx.wait(220); }
     for (const m of crew) m.classList.remove('hammer');
     a.hush();
     const bill = prop(ctx, 'wd-paper bill', `<div class="wd-page"><div class="wd-head">MAINTENANCE INVOICE</div><div class="wd-rule"></div>
@@ -657,19 +683,21 @@
     Speech.tune('tick');
     await ctx.wait(2200);
     unpop(bill, 400);
-    // the repair itself
-    // she pulls one strip of packing tape across the crack, end to end, and pats it down
+    // the repair itself: she pulls one strip of packing tape across the crack, end to end, and pats it down
     a.dress(HARDHAT + TAPEROLL);
     const tape = prop(ctx, 'wd-repair-tape', '<span>FRAGILE · FRAGILE</span>');
-    tape.style.left = `${cx - 84}px`;
-    tape.style.top = `${cy - 16}px`;
+    at(tape, cx - 84, cy - 16);
     await a.moveTo(cx - 84 - a.size * 0.85, cy - a.size * 0.62, { ms: 700 });
     Speech.tune('scratch', 0.7);
     tape.classList.add('in');
     await a.moveTo(cx + 84 - a.size * 0.5, cy - a.size * 0.62, { hop: false, ms: 900 });
     for (let i = 0; i < 2; i++) { a.bounce(); tape.classList.remove('pat'); void tape.offsetWidth; tape.classList.add('pat'); Speech.tune('key', 1); await ctx.wait(420); }
     a.dress(HARDHAT);
+    // the crew cheers and the scaffolding comes down
+    for (const m of crew) m.classList.add('cheer');
+    Speech.tune('chime', 0.5);
     await ctx.wait(300);
+    await a.moveTo(cx - 330, cy - 40, { ms: 700 });
     await S('{shine}Job done.', { hold: 600 });
     a.hush();
     a.lookAt(cx, cy, true);
@@ -677,7 +705,29 @@
     await S("{flat}...It's upside down, isn't it.", { keepLook: true, hold: 900 });
     await S('{wink}Still counts.', { hold: 900 });
     a.hush();
-    for (const s of [...signs, ...crew, scaffold, crack, tape]) unpop(s, 400);
+    for (const s of [...crew, scaffold, ...cordon, crack, tape, zone]) unpop(s, 450);
+    // one more strip, for the sign out front: her name on tape, for the rest of the day
+    const name = document.querySelector('.brand-name');
+    if (name) {
+      await ctx.wait(500);
+      a.dress(HARDHAT + TAPEROLL);
+      const r = name.getBoundingClientRect(), w = Math.max(88, r.width + 14);
+      const label = prop(ctx, 'wd-repair-tape name', '<span>SNAPPY</span>');
+      at(label, r.left - 6, r.top + r.height / 2 - 12);
+      label.style.setProperty('--w', `${w}px`);
+      await a.moveTo(r.left + w + 4, r.top - 20, { ms: 800 });
+      a.lookAt(r.left + w / 2, r.top + r.height / 2, true);
+      Speech.tune('scratch', 0.7);
+      label.classList.add('in');
+      await ctx.wait(950);
+      for (let i = 0; i < 2; i++) { a.bounce(); label.classList.remove('pat'); void label.offsetWidth; label.classList.add('pat'); Speech.tune('key', 1); await ctx.wait(420); }
+      // from here on it's the app's own (until midnight), drawn in exactly the same place
+      Events.leaveBehind('maintenance', { instant: true });
+      label.remove();
+      a.dress(HARDHAT);
+      await S('{wink}There. {pause}Now everybody knows whose app this is.', { keepLook: true, hold: 900 });
+      a.hush();
+    }
     await homeIn(ctx, a, HARDHAT);
   }
 
@@ -767,4 +817,14 @@
   D('bugfix', { title: 'The Real Developer', hint: 'Something is crawling around the library.', run: bugfix, when: inLibrary });
   Events.outfit('tophat', { name: 'Top hat and wand', markup: TOPHAT, from: 'magic' });
   Events.outfit('hardhat', { name: 'Hard hat', markup: HARDHAT, from: 'maintenance' });
+  // and what they leave behind for the rest of the day: the company name and her stickers, the meeting's one
+  // decision, a sparkle, a polish, the switch still a little bit on, her name on tape, the bug count
+  Events.aftermath('job', { label: 'Snappy Industries', name: 'Snappy Industries',
+    marks: [{ at: '.save-clip', cls: 'af-sticker heart' }, { at: '.save-clip', cls: 'af-sticker star' }] });
+  Events.aftermath('meeting', { label: 'The sticky note from the meeting', marks: [{ at: '#libraryView .title-block', cls: 'af-note', html: 'buy more storage!!' }] });
+  Events.aftermath('magic', { label: 'A little sparkle', marks: [{ at: '.brand', cls: 'af-sparkle' }] });
+  Events.aftermath('reality', { label: 'A fresh polish', marks: [{ at: '.save-clip', cls: 'af-shine' }] });
+  Events.aftermath('gravity', { label: 'A little zero gravity', cls: 'af-float' });
+  Events.aftermath('maintenance', { label: 'Her name on tape', cls: 'af-taped', marks: [{ at: '.brand-name', cls: 'af-name-tape', html: '<span>SNAPPY</span>' }] });
+  Events.aftermath('bugfix', { label: 'The bug in a jar', marks: [{ at: '.brand', cls: 'af-pic af-jar' }] });
 })();

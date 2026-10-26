@@ -1,5 +1,6 @@
 // Snap-Man: a maze, frames to eat, and the Lag's minions after her. The big frames are a flash: for a few seconds
-// the minions run, and she can send them back to their pen. Arrow keys or WASD. One life, and the high score to beat.
+// the minions run, and she can send them back to their pen. Eat them all and the maze fills up again, the minions a
+// little quicker each time. Arrow keys or WASD. One life, and the high score to beat.
 (() => {
   const { snappy: her, minion, text, PAL } = Arcade;
   const CELL = 16;
@@ -41,11 +42,12 @@
     const open = (c, r) => MAZE[r]?.[c] !== undefined && MAZE[r][c] !== '#';
     const dots = new Map();
     let start, pen;
-    MAZE.forEach((row, r) => [...row].forEach((ch, c) => {
+    const fill = () => MAZE.forEach((row, r) => [...row].forEach((ch, c) => {
       if (ch === '.' || ch === 'o') dots.set(`${c},${r}`, ch === 'o');
       if (ch === 'P') start = [c, r];
       if (ch === 'G') pen = [c, r];
     }));
+    fill();
     const total = dots.size;
     const me = { x: 0, y: 0, dir: [0, 0], next: [0, 0] };
     // they leave the pen one at a time, the first after a moment's head start
@@ -55,8 +57,9 @@
       foes.forEach((f) => { f.x = pen[0] * CELL; f.y = pen[1] * CELL; f.wait = 150 + f.i * 110; });
     };
     place();
-    let lives = 1, score = 0, scared = 0, frame = 0, won = false;
-    const hi = before || 0, ready = performance.now() + 1800;
+    let lives = 1, score = 0, scared = 0, frame = 0, level = 1, cleared = 0;
+    const hi = before || 0;
+    let ready = performance.now() + 1800;
     const centered = (e) => e.x % CELL === 0 && e.y % CELL === 0;
     const cellOf = (e) => [e.x / CELL, e.y / CELL];
     // the arcade look: black, blue-outlined walls, little dots, ghost colours, and the scores along the top
@@ -94,13 +97,25 @@
       text(g, String(score).padStart(2, '0'), 36, 13, { size: 7, color: '#fff', align: 'right' });
       text(g, 'HIGH SCORE', W / 2, 6, { size: 6, color: '#fff', align: 'center' });
       text(g, String(Math.max(hi, score)).padStart(2, '0'), W / 2 + 14, 13, { size: 7, color: score > hi && hi ? '#ffb8ae' : '#fff', align: 'right' });
-      text(g, `${total - dots.size}/${total}`, W - 6, 13, { size: 7, color: '#ffe14a', align: 'right' });
+      text(g, level > 1 ? `L${level} ${total - dots.size}/${total}` : `${total - dots.size}/${total}`, W - 6, 13, { size: 7, color: '#ffe14a', align: 'right' });
     };
-    while (lives > 0 && !won) {
+    while (lives > 0) {
       await scr.tick();
       const t = performance.now();
-      // READY! first, the way it always starts
-      if (t < ready) { draw(t, false); text(g, 'READY!', W / 2, 14 + 7 * CELL + 12, { size: 9, color: '#ffe14a', align: 'center' }); continue; }
+      // READY! first, the way it always starts (and the next level after a clear)
+      if (t < ready) { draw(t, false); text(g, level > 1 ? `LEVEL ${level}` : 'READY!', W / 2, 14 + 7 * CELL + 12, { size: 9, color: '#ffe14a', align: 'center' }); continue; }
+      if (!dots.size) {
+        // all eaten: a bonus, a fresh maze, and they come out a little quicker
+        cleared++;
+        level++;
+        score += 1000 * cleared;
+        Speech.tune('fanfare', 0.4);
+        fill();
+        place();
+        scared = 0;
+        ready = t + 2200;
+        continue;
+      }
       frame++;
       for (const [k, d] of Object.entries(DIRS)) if (scr.held(k)) me.next = d;
       // a turn asked for a few pixels too late still counts: back to the middle of the square, and round the corner
@@ -116,10 +131,9 @@
           if (!open(c + me.dir[0], r + me.dir[1])) me.dir = [0, 0];
           const key = `${c},${r}`;
           if (dots.has(key)) {
-            if (dots.get(key)) { scared = t + 6000; score += 50; Speech.tune('coin', 0.5); }
+            if (dots.get(key)) { scared = t + Math.max(2600, 6000 - (level - 1) * 900); score += 50; Speech.tune('coin', 0.5); }
             else { score += 10; if (frame % 3 === 0) snappy.call('sound.blip', { pitch: 1200, volume: Speech.volume * 0.5 }).catch(() => {}); }
             dots.delete(key);
-            if (!dots.size) won = true;
           }
         }
         me.x += me.dir[0];
@@ -129,8 +143,10 @@
       const afraid = t < scared;
       for (const f of foes) {
         if (f.wait > 0) { f.wait--; continue; }
-        // a little slower than her, and half that when they're scared
-        const moves = afraid ? (frame % 2 ? 1 : 0) : (frame % 5 ? 1 : 0);
+        // a little slower than her (she does 1.33 a frame), a bit quicker each level, and half that when scared
+        f.acc = (f.acc || 0) + (afraid ? 0.5 : Math.min(1.15, 0.8 + (level - 1) * 0.09));
+        const moves = Math.floor(f.acc);
+        f.acc -= moves;
         for (let step = 0; step < moves; step++) {
           if (centered(f)) {
             const [c, r] = cellOf(f);
@@ -152,19 +168,19 @@
       draw(t, afraid);
     }
     stop();
-    if (!won) Speech.tune('crash', 0.25);
+    Speech.tune('crash', 0.25);
     const record = Arcade.best('snapman', score);
     for (let i = 0; i < 130; i++) {
       await scr.tick();
       draw(performance.now(), false);
-      text(g, won ? 'ALL FRAMES EATEN!' : 'GAME  OVER', W / 2, 14 + 7 * CELL + 12, { size: 9, color: won ? '#ffe14a' : '#ff2020', align: 'center' });
+      text(g, 'GAME  OVER', W / 2, 14 + 7 * CELL + 12, { size: 9, color: '#ff2020', align: 'center' });
       if (record.beat && record.old !== null && Math.floor(i / 10) % 2) text(g, 'NEW HIGH SCORE!', W / 2, 14 + 5 * CELL + 12, { size: 8, color: '#ffb8ae', align: 'center' });
     }
     await scr.close();
-    if (won) {
-      await S('{joy}Every single frame! {pause}Mine!', { hold: 400 });
-      await P(`You ate ${total} frames. {pause}That is about one second of a clip.`, { hold: 600 });
-      await S('{wink}A delicious second.', { hold: 700 });
+    if (cleared) {
+      await S(`{joy}${cleared === 1 ? 'A whole maze' : `${cleared} whole mazes`}! {pause}Every single frame! {pause}Mine!`, { hold: 400 });
+      await P(`You ate ${total * cleared + total - dots.size} frames. {pause}That is about ${cleared + 1} ${cleared ? 'seconds' : 'second'} of a clip.`, { hold: 600 });
+      await S(record.beat && record.old !== null ? `{shine}And ${score} points! {pause}A new high score!` : '{wink}Delicious seconds.', { hold: 700 });
     } else if (record.beat && record.old !== null) {
       await S(`{joy}${score} points! {pause}A new high score!`, { hold: 400 });
       await P('The Lag still got you.', { hold: 600 });
@@ -178,6 +194,6 @@
   }
 
   Events.define('snapman', {
-    tier: 'game', title: 'Snap-Man', hint: 'Somebody has to eat the frames before the Lag does.', run: snapman, weight: 1, after: ['framedrop'], again: true,
+    tier: 'game', title: 'Snap-Man', hint: 'Somebody has to eat the frames before the Lag does.', run: snapman, weight: 1, after: ['framedrop'], arcade: true, unit: 'points',
   });
 })();

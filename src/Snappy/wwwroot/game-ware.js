@@ -207,7 +207,7 @@
   async function ware(ctx) {
     const { S, P, screen, music, abandon, finish } = await Arcade.open(ctx);
     const before = Arcade.top('ware');
-    if (Events.has('ware') && before !== null) {
+    if (before !== null) {
       await S(`{shine}SnappyWare! {pause}Again! {pause}My best is ${before}.`, { hold: 300 });
       await P('The button still says click me.', { hold: 500 });
       await S("{angry}I'm not falling for it this time.", { hold: 500 });
@@ -232,7 +232,7 @@
     const onType = (e) => { if (e.key.length === 1) typed.push(e.key); };
     addEventListener('keydown', onType, true);
     ctx.onEnd(() => removeEventListener('keydown', onType, true));
-    let lives = 4, won = 0, played = 0, speed = 0.7, boss = false;
+    let lives = 4, won = 0, played = 0, speed = 0.8, boss = false;
 
     // between rounds: her stage, the number of the next game, the lives as little heads, and how she feels about it
     const interlude = async (mood, banner) => {
@@ -293,12 +293,17 @@
 
     const order = [...GAMES].sort(() => Math.random() - 0.5);
     let mood = 'start';
+    // never the same tiny game twice in a row
+    let last = null;
+    const next = (game) => { last = game; return game; };
+    const another = () => { const rest = GAMES.filter((x) => x !== last); return next(rest[Math.floor(Math.random() * rest.length)]); };
     for (let i = 0; i < 10 && lives > 0; i++) {
       const faster = i && i % 3 === 0;
-      if (faster) speed += 0.22;
+      if (faster) speed += 0.3;
       await interlude(mood, faster ? 'SPEED UP!' : '');
       played++;
-      if (await play(order[i % order.length], speed)) { won++; mood = 'win'; } else { lives--; mood = 'lose'; }
+      const game = order[i % order.length] === last ? another() : next(order[i % order.length]);
+      if (await play(game, speed)) { won++; mood = 'win'; } else { lives--; mood = 'lose'; }
     }
     // the boss stage: the Program, thirty seconds, no mercy
     if (lives > 0) {
@@ -310,7 +315,7 @@
       const end = performance.now() + 30000;
       while (performance.now() < end && lives > 0) {
         played++;
-        if (await play(GAMES[Math.floor(Math.random() * GAMES.length)], 1.6)) won++;
+        if (await play(another(), 1.9)) won++;
         else lives--;
       }
       boss = lives > 0;
@@ -332,12 +337,16 @@
       await S("{wink}That's Program for 'amazing'.", { hold: 700 });
     } else {
       await P('Some of those were very easy.', { hold: 500 });
-      await S("{angry}The button SAID click me!", { shout: true, hold: 700 });
+      await S("{angry}The button SAID click me!", { shout: true, hold: 500 });
+      await S('{smug}Tomorrow. {pause}Tomorrow I beat the boss.', { hold: 700 });
     }
     await finish();
+    // only beating the boss stage counts: until then it's back in the arcade every day
+    return boss;
   }
 
   Events.define('ware', {
-    tier: 'game', title: 'SnappyWare', hint: 'Tiny games. Very fast.', run: ware, weight: 1, again: true,
+    tier: 'game', title: 'SnappyWare', hint: 'Tiny games. Very fast.', run: ware, weight: 1, arcade: true, ending: true, unit: 'wins',
   });
+  Events.aftermath('ware', { label: 'The boss bomb', marks: [{ at: '.brand', cls: 'af-pic af-bomb' }] });
 })();

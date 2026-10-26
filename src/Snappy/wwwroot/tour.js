@@ -91,19 +91,25 @@
   const pagesOf = (step) => (step.tryIt ? [...step.pages, { text: step.tryIt, face: 'shine', tryIt: true }] : step.pages);
 
   async function show(index, dir = 1) {
+    // only the newest step counts: one still getting ready when you click on is dropped
+    const turn = ++run.turn;
+    const current = () => run && run.turn === turn;
     run.index = index;
     run.page = 0;
     run.changed = false;
     run.trying = false;
+    quiet();
     const step = run.steps[index];
     const bubble = run.root.querySelector('.tour-bubble');
     bubble.classList.remove('pop');
     run.root.querySelector('.tour-spot').classList.remove('try');
     if (step.before) {
+      run.loading = true;
       await step.before();
       // wait for what she wants to show to appear (audio lanes load in the background)
       for (let i = 0; i < 40 && step.targets && !rectOf(step.targets); i++) await wait(100);
-      if (!run) return;
+      if (!current()) return;
+      run.loading = false;
     }
     if (step.targets && !rectOf(step.targets)) {
       const nextIndex = index + dir;
@@ -112,7 +118,7 @@
       return;
     }
     if (step.targets) await bringIntoView(step);
-    if (!run) return;
+    if (!current()) return;
     layout(step);
     run.root.querySelector('.tour-count').textContent = `${index + 1} / ${run.steps.length}`;
     run.root.querySelector('.tour-back').hidden = index === 0;
@@ -128,11 +134,24 @@
       : step.tryIt && !run.changed && run.page === pagesOf(step).length - 1 ? 'Later' : 'Next';
   }
 
+  // Whatever she was in the middle of saying stops, voice and all.
+  function quiet() {
+    const old = run?.writer;
+    if (old && !old.finished) { old.muted = true; old.finish(); }
+    Mascot.talking(false);
+  }
+
   async function say(text, face) {
+    if (!run) return false;
+    quiet();
     Mascot.face(face || null);
     Mascot.talking(true);
     run.root.querySelector('.tour-hint').hidden = true;
-    const writer = Speech.typewriter(run.root.querySelector('.tour-text'), text, { onWord: () => Mascot.hop(), onCue: Speech.cue });
+    let writer = null;
+    // a line that's been cut off makes no more sound and no more hops
+    writer = Speech.typewriter(run.root.querySelector('.tour-text'), text, {
+      onWord: () => { if (!writer?.muted) Mascot.hop(); }, onCue: Speech.cue, voice: () => { if (!writer?.muted) Speech.blip(); },
+    });
     run.writer = writer;
     await writer.done;
     if (!run || run.writer !== writer) return false;
@@ -171,7 +190,7 @@
   }
 
   function next() {
-    if (!run) return;
+    if (!run || run.loading) return;
     if (!run.writer?.finished) { run.writer?.finish(); return; }
     const step = run.steps[run.index];
     if (run.page < pagesOf(step).length - 1) { run.page++; typePage(); return; }
@@ -180,8 +199,7 @@
   }
 
   function back() {
-    if (!run || run.index === 0) return;
-    run.writer?.finish();
+    if (!run || run.index === 0 || run.loading) return;
     show(run.index - 1, -1);
   }
 
@@ -191,8 +209,11 @@
     const r = run;
     run = null;
     store.set(seenKey(r.name), '1');
-    r.writer?.finish();
+    if (r.writer && !r.writer.finished) { r.writer.muted = true; r.writer.finish(); }
     Mascot.talking(false);
+    r.skip.classList.remove('in');
+    r.skip.classList.add('leaving');
+    setTimeout(() => r.skip.remove(), 400);
     Mascot.face(null);
     removeEventListener('keydown', r.onKey, true);
     removeEventListener('resize', r.onResize);
@@ -212,6 +233,8 @@
 
   async function start(name) {
     if (run || !tours[name] || window.Speech?.waiting || window.Events?.running) return;
+    // (tours are Snappy's: if the Program is the camera right now, it hands her back first)
+    if (window.Events?.skin) { Events.unswap(); setTimeout(() => start(name), 900); return; }
     const def = tours[name];
     const steps = def.steps().filter((s) => !s.targets || s.before || rectOf(s.targets));
     if (!steps.length) return;
@@ -229,8 +252,15 @@
         </div>
       </div>`;
     document.body.appendChild(root);
+    // the same Skip as during her events, to stop the tour at any point
+    const skip = document.createElement('button');
+    skip.className = 'event-skip';
+    skip.innerHTML = 'Skip <kbd>Esc</kbd>';
+    skip.addEventListener('click', () => finish(false));
+    document.body.appendChild(skip);
+    setTimeout(() => skip.classList.add('in'), 700);
     Mascot.mount(root.querySelector('.tour-mascot'));
-    run = { name, steps, root, index: 0, page: 0, scroller: def.scroller, entered: false, unsolo: Mascot.solo(root.querySelector('.tour-mascot')) };
+    run = { name, steps, root, skip, index: 0, page: 0, turn: 0, scroller: def.scroller, entered: false, unsolo: Mascot.solo(root.querySelector('.tour-mascot')) };
     const me = run;
 
     root.addEventListener('click', (e) => {
@@ -267,8 +297,26 @@
     await show(0);
   }
 
+  // The first time you open a page she has a tour for, she asks before showing you around (once a session). "Nah"
+  // means not again: it's still there under Settings, Snappy.
+  const offered = new Set();
+  function offer(name) {
+    if (run || !tours[name] || offered.has(name) || store.get(seenKey(name)) === '1') return;
+    if (!window.Speech?.enabled || window.Speech.waiting || window.Events?.running) return;
+    offered.add(name);
+    const where = name === 'clip' ? 'player' : 'settings';
+    Speech.say(name === 'clip' ? '{shine}First clip? {pause}Want me to show you everything you can do with it?' : '{shine}Want me to show you around the settings?', {
+      kind: 'news', key: 'tour', interrupt: true,
+      actions: [
+        { label: 'Yes, show me!', fn: () => { if (state.view === where) start(name); } },
+        { label: 'Nah', fn: () => { store.set(seenKey(name), '1'); Speech.say("{wink}Okay! {happy}If you change your mind, it's under Settings, Snappy.", { kind: 'news', interrupt: true }); } },
+      ],
+    });
+  }
+
   window.Tour = {
     start,
+    offer,
     define(name, def) { tours[name] = def; },
     seen: (name) => store.get(seenKey(name)) === '1',
     get active() { return !!run; },

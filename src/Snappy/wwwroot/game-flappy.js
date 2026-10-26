@@ -114,7 +114,13 @@
     const stop = music('platform', 3200);
     const me = { y: H / 2 - 20, vy: 0 };
     const pipes = [];
-    let score = 0, alive = true, shift = 0, flapT = 0, ready = true;
+    let score = 0, alive = true, shift = 0, flapT = 0, ready = true, spawned = 0;
+    // the gaps wander up and down, gently for the first few pipes and anywhere after that
+    const nextTop = () => {
+      const lo = 40, hi = GROUND - GAP - 40, prev = pipes.length ? pipes[pipes.length - 1].top : (lo + hi) / 2;
+      const reach = spawned++ < 5 ? 34 : 70;
+      return Math.max(lo, Math.min(hi, prev + (Math.random() * 2 - 1) * reach));
+    };
     while (alive) {
       const dt = await scr.tick();
       const t = performance.now();
@@ -123,7 +129,7 @@
       else {
         me.vy = Math.min(6, me.vy + 0.28 * dt);
         me.y += me.vy * dt;
-        if (!pipes.length || pipes[pipes.length - 1].x < W - 84) pipes.push({ x: W + 10, top: 40 + Math.random() * (GROUND - GAP - 80), passed: false });
+        if (!pipes.length || pipes[pipes.length - 1].x < W - 84) pipes.push({ x: W + 10, top: nextTop(), passed: false });
       }
       shift += SPEED * dt;
       for (const p of pipes) {
@@ -194,6 +200,6 @@
   }
 
   Events.define('flappy', {
-    tier: 'game', title: 'Snappy Bird', hint: 'She says she can fly. She cannot.', run: flappy, weight: 1, after: ['claude'], again: true,
+    tier: 'game', title: 'Snappy Bird', hint: 'She says she can fly. She cannot.', run: flappy, weight: 1, after: ['claude'], arcade: true, unit: 'pipes',
   });
 })();

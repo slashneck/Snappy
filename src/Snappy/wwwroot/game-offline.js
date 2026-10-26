@@ -69,12 +69,14 @@
       speed = Math.min(7, speed + 0.0016 * dt);
       dist += speed * dt;
       step += speed * dt * 0.05;
-      // what's coming: a minion, a spike, or a flying bar of signal at head height
+      // what's coming: a minion, a spike, or a flying bar of signal: low (jump it), at head height (duck, or jump
+      // early) or high (only in the way if you jump)
       next -= speed * dt;
       if (next <= 0) {
         const kind = dist > 900 && Math.random() < 0.3 ? 'signal' : Math.random() < 0.55 ? 'minion' : 'spike';
-        stuff.push({ x: w + 10, kind, y: kind === 'signal' ? floor - 30 - (Math.random() < 0.5 ? 0 : 14) : floor - 16 });
-        next = 120 + Math.random() * 140 + speed * 12;
+        stuff.push({ x: w + 10, kind, y: kind === 'signal' ? floor - [12, 20, 40][Math.floor(Math.random() * 3)] : floor - 16 });
+        // never closer than a jump and a moment to react, however fast it gets
+        next = 40 + speed * 38 + Math.random() * 150;
       }
       for (const s of stuff) s.x -= speed * dt;
       while (stuff.length && stuff[0].x < -30) stuff.shift();
@@ -107,6 +109,6 @@
   }
 
   Events.define('offline', {
-    tier: 'game', title: 'No Internet Run', hint: 'The internet goes down. She does not notice.', run: offline, weight: 1, again: true,
+    tier: 'game', title: 'No Internet Run', hint: 'The internet goes down. She does not notice.', run: offline, weight: 1, arcade: true, unit: 'points',
   });
 })();

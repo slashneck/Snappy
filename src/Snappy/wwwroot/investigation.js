@@ -433,4 +433,5 @@
     tier: 'rare', title: 'Case Closed', hint: 'A clip goes missing. Snappy takes the case.', run: investigation, weight: 2,
   });
   Events.outfit('detective', { name: 'Detective hat', markup: DETECTIVE, from: 'investigation' });
+  Events.aftermath('investigation', { label: 'Her magnifying glass', marks: [{ at: '.brand', cls: 'af-pic af-glass' }] });
 })();

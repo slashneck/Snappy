@@ -51,14 +51,11 @@
     return { stage, a, S, spot };
   }
 
-  // Home, still wearing her outfit; it comes off once she's settled in.
+  // Home, still wearing her outfit.
   async function homeIn(ctx, a, outfit) {
     const slot = document.getElementById('mascot');
+    // (she keeps it on: if it's one of her outfits it stays until midnight, if not it comes off once she's home)
     await a.home({ handOff: () => outfit && Mascot.dress(slot, outfit, true) });
-    if (!outfit) return;
-    await ctx.wait(1500);
-    Mascot.dress(slot, null);
-    await ctx.wait(400);
   }
 
   // Confetti, for a while.
@@ -372,40 +369,113 @@
       await ctx.wait(1600);
       await S("{happy}Congratulations. {pause}{wink}You've graduated.", { hold: 1400 });
       unpop(diploma, 500);
-    } else {
-      await S("{shine}Excellent. {pause}Let's begin with a practical demonstration.", { hold: 400 });
+    } else if (plan === 'aim') {
+      // your turn: the crosshair is yours, right up until you click
+      await S("{shine}Excellent. {pause}Your turn. {pause}Crosshair on the middle, then click.", { hold: 300 });
       a.hush();
-      const range = stage.add('wd-range', '<div class="wd-target"><i></i><i></i><i></i></div><div class="wd-crosshair"></div>');
+      const range = stage.add('wd-range', '<div class="wd-target"><i></i><i></i><i></i></div>');
       pop(range);
-      await ctx.wait(700);
-      const ch = range.querySelector('.wd-crosshair');
-      ch.classList.add('aim');
-      await ctx.wait(1300);
-      // bang. not even close.
+      await ctx.wait(600);
+      const r = range.getBoundingClientRect();
+      const ch = stage.add('wd-crosshair mine');
+      const at = { x: r.left + r.width * 0.2, y: r.top + r.height * 0.3 };
+      const put = () => { ch.style.left = `${at.x}px`; ch.style.top = `${at.y}px`; };
+      put();
+      stage.root.classList.add('wd-aiming');
+      const follow = (e) => { at.x = Math.max(r.left + 6, Math.min(r.right - 6, e.clientX)); at.y = Math.max(r.top + 6, Math.min(r.bottom - 6, e.clientY)); put(); };
+      addEventListener('pointermove', follow);
+      a.lookAt(r.left + r.width / 2, r.top + r.height / 2, true);
+      let fired = null;
+      const fire = (e) => { if (!e.target.closest('.event-skip')) fired?.(); };
+      stage.root.addEventListener('pointerdown', fire);
+      ctx.onEnd(() => { removeEventListener('pointermove', follow); stage.root.removeEventListener('pointerdown', fire); });
+      // (nobody clicks for a while: it goes off by itself)
+      await ctx.run(new Promise((res) => { fired = res; setTimeout(res, 14000); }));
+      removeEventListener('pointermove', follow);
+      stage.root.removeEventListener('pointerdown', fire);
+      // bang, and the crosshair takes off on its own: loops around the room and lands in her trophy
       Speech.tune('glitch', 0.7);
-      ch.classList.add('fire');
+      Speech.tune('whoosh', 0.7);
+      const tr = trophy.getBoundingClientRect(), end = { x: tr.left + tr.width / 2, y: tr.top + tr.height * 0.32 }, from = { ...at };
+      const start = performance.now(), ms = 1700;
+      for (;;) {
+        ctx.check();
+        const k = Math.min(1, (performance.now() - start) / ms), e = k * k * (3 - 2 * k);
+        at.x = from.x + (end.x - from.x) * e + Math.sin(k * Math.PI * 3) * 160 * (1 - k);
+        at.y = from.y + (end.y - from.y) * e + Math.sin(k * Math.PI * 5) * 60 * (1 - k) - Math.sin(k * Math.PI) * 110;
+        put();
+        ch.style.rotate = `${e * 1080}deg`;
+        if (k >= 1) break;
+        await new Promise((res) => requestAnimationFrame(res));
+      }
+      stage.root.classList.remove('wd-aiming');
+      ch.remove();
       const hole = document.createElement('div');
       hole.className = 'wd-hole';
-      hole.style.left = `${W * 0.86}px`;
-      hole.style.top = `${H * 0.16}px`;
+      hole.style.left = `${end.x}px`;
+      hole.style.top = `${end.y}px`;
       stage.props.appendChild(hole);
       pop(hole);
+      trophy.classList.add('hit');
+      Speech.tune('clunk', 0.9);
+      a.lookAt(end.x, end.y, true);
+      Mascot.face('shock');
       await ctx.wait(900);
-      a.lookAt(W * 0.86, H * 0.16, true);
-      Mascot.face('flat');
-      await ctx.wait(1200);
-      await S('{flat}That was a warning shot.', { keepLook: true, hold: 1400 });
+      await S('{shock}MY TROPHY.', { keepLook: true, hold: 500 });
+      await S('{flat}...That was a warning shot.', { hold: 900 });
+      await S("{smug}See? {pause}That's your aim. {pause}{wink}My coaching was perfect.", { hold: 1000 });
       unpop(range, 450);
       unpop(hole, 450);
+    } else {
+      // movement: a strafe so fast she can't stop
+      await S("{shine}Excellent. {pause}Movement. {pause}Watch closely.", { hold: 300 });
+      a.hush();
+      a.root.classList.add('wd-strafe');
+      const x0 = a.x, y0 = a.y;
+      for (const dx of [-70, 90, -90, 110, -110, 150]) {
+        await a.moveTo(Math.max(12, x0 + dx), y0, { hop: false, ms: 210 });
+        snappy.call('sound.blip', { pitch: 700 + Math.random() * 200, volume: Speech.volume * 0.6 }).catch(() => {});
+      }
+      a.root.classList.remove('wd-strafe');
+      a.trip();
+      Speech.tune('clunk', 0.8);
+      Mascot.face('wince');
+      await ctx.wait(1100);
+      await S('{flat}That was a feint.', { hold: 900 });
+      await S('{smug}The enemy never saw it coming. {pause}{wink}Neither did I.', { hold: 1000 });
+      await a.moveTo(x0, y0, { hop: false });
     }
     a.hush();
     unpop(trophy, 400);
     await ctx.wait(400);
-    const price = stage.add('wd-price', '<div>Next session</div><b>€49.99</b><small>Discount available for anyone ranked higher than Bronze II.</small>');
+    const price = stage.add('wd-price', '<div>Next session</div><b>€49.99</b><small>Discount available for anyone ranked higher than Bronze II.</small><button class="wd-book" tabindex="-1">Book now</button>');
     pop(price);
     Speech.tune('coin');
+    // the button doesn't want to be booked: it hops out of the way of the pointer, until it runs out of breath
+    const book = price.querySelector('.wd-book');
+    let hops = 0, booked = false, off = [0, 0];
+    const dodge = (e) => {
+      if (booked || hops >= 6) return;
+      const r = book.getBoundingClientRect(), dx = r.left + r.width / 2 - e.clientX, dy = r.top + r.height / 2 - e.clientY;
+      if (Math.hypot(dx, dy) > 64) return;
+      hops++;
+      const ang = Math.atan2(dy, dx) + (Math.random() - 0.5) * 1.4;
+      off = [Math.max(-150, Math.min(150, off[0] + Math.cos(ang) * 90)), Math.max(-60, Math.min(70, off[1] + Math.sin(ang) * 50))];
+      book.style.translate = `${off[0]}px ${off[1]}px`;
+      snappy.call('sound.blip', { pitch: 1400 + hops * 120, volume: Speech.volume * 0.6 }).catch(() => {});
+      if (hops >= 6) book.classList.add('tired');
+    };
+    addEventListener('pointermove', dodge);
+    ctx.onEnd(() => removeEventListener('pointermove', dodge));
+    book.addEventListener('click', () => { booked = true; book.classList.add('booked'); book.textContent = 'Booked!'; Speech.tune('tick'); });
     await S('{shine}My next coaching session costs €49.99.', { hold: 1500 });
-    await S('{open}So... {pause}{wink}probably you.', { hold: 600 });
+    for (let i = 0; i < 25 && !booked; i++) await ctx.wait(160);
+    removeEventListener('pointermove', dodge);
+    if (booked) {
+      Mascot.face('shock');
+      await S('{shock}You... {pause}actually clicked it.', { hold: 700 });
+      await S("{worried}Okay. {pause}Don't worry. {pause}{wink}It's pretend. {pause}Nobody pays anything.", { hold: 900 });
+    } else await S('{open}So... {pause}{wink}probably you.', { hold: 600 });
     a.hush();
     unpop(price, 300);
     stage.end();
@@ -677,6 +747,12 @@
   Events.outfit('tie', { name: 'Tie', markup: TIE, from: ['review', 'job'] });
   Events.outfit('headset', { name: 'Coaching headset', markup: HEADSET, from: 'academy' });
   Events.outfit('beret', { name: 'Beret and scarf', markup: BERET, from: 'critic' });
+  // what each of them leaves behind for the rest of the day, under her name
+  Events.aftermath('review', { label: 'The rosette she gave herself', marks: [{ at: '.brand', cls: 'af-pic af-rosette' }] });
+  Events.aftermath('academy', { label: 'Her rank emblem', marks: [{ at: '.brand', cls: 'af-pic af-bronze' }] });
+  Events.aftermath('loading', { label: 'A loading ring at 99%', marks: [{ at: '.brand', cls: 'af-pic af-loading' }] });
+  Events.aftermath('viral', { label: 'Her ring light', marks: [{ at: '.brand', cls: 'af-pic af-ring' }] });
+  Events.aftermath('critic', { label: 'Four and a half stars', marks: [{ at: '.brand', cls: 'af-pic af-stars' }] });
 
   window.World = { thumb, newest, gameClip, confetti, paper };
 })();

@@ -454,4 +454,5 @@
   Events.define('cookies', {
     tier: 'game', title: 'Cookie Snapper', hint: 'Remember those cookies she grabbed?', run: cookies, weight: 1, after: ['deepscan', 'framedrop'],
   });
+  Events.aftermath('cookies', { label: 'A cookie for later', marks: [{ at: '.brand', cls: 'af-cookie' }] });
 })();

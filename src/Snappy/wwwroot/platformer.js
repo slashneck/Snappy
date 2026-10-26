@@ -316,4 +316,5 @@
   Events.define('platformer', {
     tier: 'game', title: 'Super Snappy', hint: 'Her latest update came with games. Allegedly made with help.', run: superSnappy, weight: 2, after: ['claude'],
   });
+  Events.aftermath('platformer', { label: 'A coin from World 1-1', marks: [{ at: '.brand', cls: 'af-pic af-pixcoin' }] });
 })();

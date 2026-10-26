@@ -73,6 +73,8 @@ public sealed class AppSettings
     public bool EarlyBirdSeen { get; set; }       // that story came up once (watched or skipped): she talks from then on
     public string? WhatsNewFor { get; set; }      // a version whose patch notes haven't been shown yet
     public string? MascotOutfit { get; set; }     // what she wears every day, once she has worn it in an event
+    public string? MascotAftermath { get; set; }  // an event's little leftover in the app, kept for good instead of just that day
+    public bool DeveloperMode { get; set; }       // the terminal next to the arcade (found by tapping the version, or in a story)
     public bool ShinySeen { get; set; }           // the golden pop-up showed up at least once
     public int SoundVolumePercent { get; set; } = 100; // her voice and the clip-saved sound
     public bool StartWithWindows { get; set; } = true;

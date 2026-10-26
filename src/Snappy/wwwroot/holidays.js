@@ -282,7 +282,7 @@
     const best = clipOfYear();
     const gift = stage.add('hd-gift', `<div class="hd-gift-inside">${best.clip ? `<div class="hd-thumb">${World.thumb(best.clip)}</div>
         <div class="hd-gift-label">Clip of the year</div><div class="hd-title">${esc(best.clip.title)}</div>`
-      : '<div class="hd-gift-me"><div class="mascot"></div></div><div class="hd-gift-label">A picture of me</div>'}</div>
+      : '<div class="hd-gift-me"><div class="mascot picture"></div></div><div class="hd-gift-label">A picture of me</div>'}</div>
       <div class="hd-box"><i class="hd-ribbon"></i></div><div class="hd-lid"><i class="hd-ribbon"></i><i class="hd-knot"></i></div><div class="hd-gift-hint">Click to open</div>`);
     Object.assign(gift.style, { left: `${Math.round(W * 0.62)}px`, top: `${Math.round(H * 0.5)}px` });
     if (!best.clip) { const photo = gift.querySelector('.hd-gift-me .mascot'); Mascot.own(photo); Mascot.mount(photo); }

@@ -4,11 +4,15 @@
   const pop = (el) => { void el.offsetWidth; el.classList.add('in'); };
   const unpop = async (el, ms = 450) => { el.classList.remove('in'); el.classList.add('out'); await wait(ms); el.remove(); };
 
-  // The Program, shrunk into a little camera of its own.
-  const TINY_PROGRAM = `<svg viewBox="-16 -18 232 222"><ellipse cx="100" cy="194" rx="62" ry="7" fill="#000" opacity=".35"/>
-    <rect x="40" y="34" width="44" height="28" rx="9" fill="#1d262d" stroke="#0a0a0a" stroke-width="8"/>
+  // The Program in a camera body: dark, one blue eye that looks around, blinks, squints and goes wide. Drawn in her
+  // coordinates, so the same markup is the little camera in the story and her skin afterwards.
+  const SKIN = `<g class="pg-skin"><rect x="40" y="34" width="44" height="28" rx="9" fill="#1d262d" stroke="#0a0a0a" stroke-width="8"/>
     <rect x="10" y="54" width="180" height="128" rx="44" fill="#1d262d" stroke="#0a0a0a" stroke-width="8"/>
-    <circle cx="100" cy="118" r="34" fill="#0b1318" stroke="#2a3a44" stroke-width="6"/><circle class="sw-iris" cx="100" cy="118" r="14" fill="#8fe6ff"/></svg>`;
+    <circle cx="100" cy="118" r="34" fill="#0b1318" stroke="#2a3a44" stroke-width="6"/>
+    <clipPath id="pg-socket"><circle cx="100" cy="118" r="31"/></clipPath>
+    <g clip-path="url(#pg-socket)"><g class="pg-look"><circle class="pg-iris" cx="100" cy="118" r="14" fill="#8fe6ff"/><circle cx="95" cy="113" r="4" fill="#fff" opacity=".75"/></g>
+    <rect class="pg-lid" x="66" y="84" width="68" height="68" fill="#1d262d"/></g></g>`;
+  const TINY_PROGRAM = `<svg viewBox="-16 -18 232 222"><ellipse cx="100" cy="194" rx="62" ry="7" fill="#000" opacity=".35"/>${SKIN}</svg>`;
 
   // Lines under whoever stands where Snappy stood, each speaker in their own style (they've swapped, so has the lettering).
   function voiceBox(ctx, { cls, label, voice, word, under }) {
@@ -128,12 +132,18 @@
     const PM = voiceBox(ctx, { cls: 'prog-mascot', label: 'PROGRAM · NOW THE MASCOT', voice: Speech.programBlip, word: () => { Speech.programWord(); bob(); }, under: spot });
     // one speaker at a time: whoever talks clears what the others said
     const sn = async (t, o = {}) => { PM.hush(); cl.hush(); await SN.say(t, o); };
-    const pm = async (t, o = {}) => { SN.hush(); cl.hush(); await PM.say(t, o); };
+    // its eye says the rest: wide when it shouts, narrowed at dots and at Snappy
+    const pm = async (t, o = {}) => {
+      SN.hush();
+      cl.hush();
+      tiny.dataset.mood = o.mood || (o.loud ? 'wide' : /^\.\.\.|^No\.|hate/.test(t) ? 'squint' : '');
+      await PM.say(t, o);
+    };
     await ctx.wait(800);
     await sn('...', { hold: 700 });
     await pm('...', { hold: 900 });
     await sn('HAHAHAHAHAHAHA.', { loud: true, hold: 600 });
-    await pm('Oh, no.', { hold: 900 });
+    await pm('Oh, no.', { hold: 900, mood: 'wide' });
     await sn('LOOK AT YOU.', { loud: true, hold: 700 });
     await pm('Please restore the previous configuration.');
     await sn("YOU'RE SO SMALL.", { loud: true, hold: 700 });
@@ -282,7 +292,15 @@
     await P2("I'M GOING TO UNINSTALL MYSELF.", { alert: true, hold: 900 });
     await S2('{joy}They suit you.', { hold: 1100 });
     await C('Sixty seconds well spent.', { hold: 1100 });
+    await S2('{smug}And Claude? {pause}Leave a little switch in. {pause}Just for today.', { hold: 300 });
+    await C('...A switch. {pause}Until midnight. {pause}Then it goes.', { hold: 600 });
     cl.hush();
+    await term.type('ui.add(swapSwitch, { until: "midnight" })', { speed: 34 });
+    Events.leaveBehind('swap');
+    Speech.tune('tick');
+    await ctx.wait(700);
+    await P2('I will not be going in there again.', { hold: 900 });
+    await S2('{wink}We will see.', { hold: 900 });
     await term.type('exit');
     term.close();
     await ctx.wait(500);
@@ -296,5 +314,31 @@
   Events.define('swap', {
     tier: 'legendary', title: 'Sixty Seconds of Power', hint: 'Snappy wants to talk to the creator. Again.', run: swap, weight: 1,
     after: ['claude'],
+  });
+
+  // Afterwards: a little switch in her corner until midnight (or the outfit, to keep it). Flipped, she is the Program:
+  // its body, its eye, its voice, its lettering, and its idea of small talk.
+  Events.outfit('programskin', { name: 'The Program (swapped)', markup: SKIN, from: 'swap', today: false, skin: 'program' });
+  Events.aftermath('swap', { label: 'The swap switch', marks: [{ at: '.sidebar-foot', cls: 'af-switch', html: '<button tabindex="-1" title="Swap with the Program"><i></i></button>' }] });
+  Speech.skinChatter = {
+    program: [
+      'Clips are being recorded. As usual.',
+      'I am in the camera now. It is roomy.',
+      'Snappy is on a break. I am covering. Badly, apparently.',
+      'Your replay buffer is ready. I checked. Twice.',
+      'This body has a record light. I keep looking at it.',
+      'I do not know how she blinks this much.',
+      'Status: adorable. Snappy made me say that.',
+      'Snappy left me a list of things to say. This is item one. There is only item one.',
+      'Please do not poke the camera. Snappy says it tickles. I do not know what that means.',
+      'I have organized nothing. I was told not to touch anything.',
+      'Everything is nominal. She would want me to say it with more feeling. Everything is nominal!',
+      'Your clips are safe. I would know. I am the clips now.',
+    ],
+  };
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.af-switch button')) return;
+    Events.swapped = !Events.swapped;
+    Speech.tune(Events.swapped ? 'boot' : 'rewind', 0.5);
   });
 })();

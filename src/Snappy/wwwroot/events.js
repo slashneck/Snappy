@@ -2,13 +2,20 @@
 // unlocks it as an achievement. Any of them can be skipped (the button at the bottom, or Esc); a skipped event doesn't
 // count and may come back another day. They only ever happen while you're hanging around in the app, never during a
 // clip, a tour, a task or a video, and not at all with "Events and surprises" off.
-//   Events.define(id, { tier, title, hint, run(ctx), replay(), weight, when(), after, quick, planned, system, invite })
+//   Events.define(id, { tier, title, hint, run(ctx), replay(), weight, when(), after, arcade, unit, quick, planned, system, invite })
 //     tier 'game': something you play along with (where it makes sense she asks first: invite is what she says)
 //     after: the events this one talks about; it only comes up once you've seen all of them
-//     again: a game with a best score to beat, which can come back now and then. Other games only ever come up once
-//       by themselves (they can still be replayed from the achievements).
+//     arcade: a game with a best score. It never comes up by itself: it's in the arcade (the controller next to her
+//       name), two games a day, one try each. unit is what its score counts. ending: one you can beat; it's in the
+//       arcade every day until you do, then it's a replay in the achievements like any other. Other games come up by
+//       themselves once and can be replayed from the achievements.
+//     run(ctx) can return false: it played to the end without being won, so it doesn't count yet
 //     planned: happens on a date or after an update, not by chance, so it doesn't push back the next surprise
 //     system: not an achievement at all (the patch notes)
+//   Events.linger(id, until), Events.lasting(id)   an event's aftermath: something it leaves behind for a while (the
+//                        rest of the day, say), e.g. an outfit whose day() asks lasting(id). It ends by itself.
+//   Events.aftermath(id, { name, tag, title, tone, cls })   a small mark on the app until midnight once it's been seen
+//                        through: a new name, a tag under hers, a class for a sticker
 //   Events.play(id)      play one right now
 //   Events.achieve(id)   unlock one that isn't played out (a reaction, a secret)
 //   Events.list()        the achievements window
@@ -391,8 +398,10 @@
     current = { id, ctx };
     // whatever played by chance, the next surprise is days away: three days, plus up to two more
     if (!def.planned && !def.system) store.set('snappy.events.next', String(Date.now() + MIN_GAP + Math.random() * EXTRA_GAP));
-    playedThisSession = true;
-    undress();
+    // (a quick little system one, like the Program popping up for the terminal, doesn't use up the session's surprise)
+    if (!(def.system && def.quick)) playedThisSession = true;
+    // (a quick one happens right in her corner, outfit and all)
+    if (!def.quick) undress();
     Speech.hush();
     window.Life?.wake();
     Mascot.reset();
@@ -407,8 +416,7 @@
     addEventListener('keydown', onKey, true);
     let finished = false;
     try {
-      await def.run(ctx);
-      finished = !ctx.cancelled;
+      finished = (await def.run(ctx)) !== false && !ctx.cancelled;
     } catch (err) {
       if (err !== SKIP) console.error(err);
     }
@@ -419,7 +427,13 @@
     Mascot.reset();
     current = null;
     if (finished && !def.system) achieve(id);
-    wear();
+    // seen through to the end: whatever it leaves behind stays for the rest of the day, and so does her outfit from it
+    if (finished && aftermaths.has(id)) takeOver(id);
+    const fit = finished && [...outfits.values()].find((o) => !o.day && o.today !== false && [o.from].flat().includes(id));
+    if (fit) store.set('snappy.outfit.today', JSON.stringify({ id: fit.id, until: midnight() }));
+    // whatever she walked home in: kept if it's today's outfit, swapped (or taken off) if not
+    wear(true);
+    mark();
     return finished;
   }
 
@@ -427,20 +441,39 @@
   // Outfits: whatever she wore in an event is hers to wear every day once that event has been seen through
   // (Settings, Snappy, Outfit). She takes it off whenever something plays and puts it back on afterwards. On a special
   // day she dresses up for it by herself, unless she's already wearing something.
-  //   Events.outfit(id, { name, markup, from, day() })
+  //   Events.outfit(id, { name, markup, from, day(), today })
+  // After the event it's from she keeps it on until midnight (unless today: false, or something's picked in Settings).
   // ---------------------------------------------------------------------------
   const outfits = new Map();
   let wearing = null;
   // from: the event (or events) that unlock it
   const owned = (o) => !o.from || [o.from].flat().some(has);
+  // what she wore in today's event, which she keeps on until midnight (unless something's picked in Settings)
+  function today() {
+    try {
+      const t = JSON.parse(store.get('snappy.outfit.today') || 'null');
+      return t && Date.now() < t.until ? outfits.get(t.id) || null : null;
+    } catch { return null; }
+  }
   const slot = () => document.getElementById('mascot');
-  function wear() {
+  // the swap switch, flipped: until midnight she wears the Program's skin, whatever else is picked. Snappy coming back
+  // for a tour switches it off (and keeps a picked skin off for the rest of the session).
+  const swapped = () => Date.now() < Number(store.get('snappy.swapped') || 0);
+  let skinOff = false;
+  function wear(force = false) {
     if (current || !slot()?.querySelector('.m-talk')) return;
     const picked = outfits.get(state.settings?.mascotOutfit);
-    const o = picked && owned(picked) ? picked : [...outfits.values()].find((x) => x.day?.()) || null;
-    if ((o?.id || null) === wearing) return;
+    const flipped = swapped() && outfits.get('programskin');
+    const o = flipped || (picked && owned(picked) && !(skinOff && picked.skin) ? picked : today() || [...outfits.values()].find((x) => x.day?.()) || null);
+    if (!force && (o?.id || null) === wearing) return;
+    // a skin goes on with a little glitch, like the swap itself
+    if (o?.skin || outfits.get(wearing)?.skin) { slot()?.classList.remove('pg-swapping'); void slot()?.offsetWidth; slot()?.classList.add('pg-swapping'); }
     wearing = o?.id || null;
+    document.documentElement.classList.toggle('skin-program', o?.skin === 'program');
     Mascot.dress(slot(), o?.markup || null);
+    // the big picture of her in an empty library is the Program too, while it's the camera
+    const art = document.getElementById('emptyArt');
+    if (art?.querySelector('.m-talk')) Mascot.dress(art, o?.skin ? o.markup : null);
   }
   function undress() {
     if (!wearing) return;
@@ -457,6 +490,97 @@
   }
   // on the morning of a special day, or after a change in Settings
   setInterval(wear, 2000);
+
+  // ---------------------------------------------------------------------------
+  // Aftermaths: some events leave a small mark on the app for the rest of the day: a new name, a little tag under
+  // hers, a sticker somewhere. Never anything in the way, everything fades in and out, and it's gone at midnight (or
+  // kept on for good from Settings, Snappy, Aftermath).
+  //   Events.aftermath(id, { label, name, tag, title, tone, marks, cls })
+  //   label: what Settings calls it; name: what the app is called; tag: a few characters under her name (title: its
+  //   tooltip, tone: a colour class); marks: [{ at: selector, cls, html }] little things put inside part of the app;
+  //   cls: a class on the page while it lasts
+  // ---------------------------------------------------------------------------
+  const aftermaths = new Map();
+  const lasting = (id) => Date.now() < Number(store.get(`snappy.after.${id}`) || 0);
+  const midnight = () => new Date().setHours(24, 0, 0, 0);
+  function linger(id, until = midnight()) { store.set(`snappy.after.${id}`, String(until)); }
+  // one aftermath at a time: a new one takes over from whatever an earlier event left
+  function takeOver(id) {
+    for (const other of aftermaths.keys()) if (other !== id && lasting(other)) store.set(`snappy.after.${other}`, '0');
+    linger(id);
+  }
+  const placed = new Map();
+  let marked = null;
+  // the app's name, swapped with a quick fade rather than a jump
+  function rename(to, instant = false) {
+    const el = document.querySelector('.brand-name');
+    if (!el || el.dataset.name === to) return;
+    const first = el.dataset.name === undefined;
+    el.dataset.name = to;
+    // only the words change: whatever else is in there (her name on tape) stays where it is
+    const swap = () => {
+      const words = [...el.childNodes].find((n) => n.nodeType === Node.TEXT_NODE);
+      if (words) words.nodeValue = to; else el.prepend(to);
+      el.classList.toggle('renamed', to !== 'Snappy');
+    };
+    if (first && to === 'Snappy') return;
+    if (instant) { swap(); return; }
+    el.classList.add('af-swap');
+    setTimeout(() => { swap(); el.classList.remove('af-swap'); }, 220);
+  }
+  // instant: put it there with no fade (an event just drew the very same thing in the same spot)
+  function mark(force = false, instant = false) {
+    if (current && !force) return;
+    // (this can run before the app has its settings)
+    let keep = null;
+    try { keep = state.settings?.mascotAftermath || null; } catch { /* not yet */ }
+    const on = [...aftermaths.values()].filter((m) => lasting(m.id) || (m.id === keep && has(m.id)));
+    const key = on.map((m) => m.id).join(' ');
+    if (key === marked) return;
+    marked = key;
+    rename(on.find((m) => m.name)?.name || 'Snappy', instant);
+    for (const m of aftermaths.values()) {
+      const want = on.includes(m), have = placed.get(m.id);
+      if (m.cls) document.documentElement.classList.toggle(m.cls, want);
+      if (want && !have) {
+        const els = [];
+        if (m.tag) {
+          let tags = document.querySelector('.af-tags');
+          if (!tags) {
+            tags = document.createElement('div');
+            tags.className = 'af-tags';
+            document.querySelector('.brand-name')?.after(tags);
+          }
+          const tag = document.createElement('span');
+          tag.className = `af-tag${m.tone ? ` ${m.tone}` : ''}`;
+          tag.title = m.title || '';
+          tag.textContent = m.tag;
+          tags?.appendChild(tag);
+          els.push(tag);
+        }
+        for (const it of m.marks || []) {
+          const host = document.querySelector(it.at);
+          if (!host) continue;
+          const el = document.createElement('i');
+          el.className = `af-mark ${it.cls}`;
+          el.setAttribute('aria-hidden', 'true');
+          el.innerHTML = it.html || '';
+          host.appendChild(el);
+          els.push(el);
+        }
+        for (const el of els) {
+          if (instant) el.classList.add('in', 'now');
+          else requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('in')));
+        }
+        placed.set(m.id, els);
+      } else if (!want && have) {
+        placed.delete(m.id);
+        for (const el of have) { el.classList.remove('in', 'now'); el.classList.add('out'); setTimeout(() => el.remove(), 600); }
+      }
+    }
+  }
+  // and at midnight, off they go
+  setInterval(mark, 5000);
 
   // ---------------------------------------------------------------------------
   // Achievements: a Steam-style pop-up in the corner, and a window with all of them
@@ -521,7 +645,7 @@
       return `<section class="ach-group ${tier}"><h4><span class="ach-dot"></span>${esc(t.group)}<em>${t.name} · ${got} of ${items.length}</em></h4>
         <div class="ach-grid">${items.map((d) => has(d.id)
           ? `<div class="ach-card">${medal(tier)}<div class="ach-card-text"><div class="ach-card-title">${esc(d.title)}</div><div class="ach-card-hint">${esc(d.hint)}</div></div>
-              ${d.run || d.replay ? `<button class="btn ghost" data-replay="${d.id}">Replay</button>` : ''}</div>`
+              ${d.arcade && !d.ending ? '<span class="ach-arcade">In the arcade</span>' : d.run || d.replay ? `<button class="btn ghost" data-replay="${d.id}">Replay</button>` : ''}</div>`
           : `<div class="ach-card locked">${medal(tier, true)}<div class="ach-card-text"><div class="ach-card-title">???</div><div class="ach-card-hint">${esc(d.hint)}</div></div></div>`).join('')}</div></section>`;
     }).join('');
     root.innerHTML = `<div class="modal ach">
@@ -531,7 +655,7 @@
       <div class="modal-actions"><button class="btn" data-close>Close</button></div>
     </div>`;
     document.body.appendChild(root);
-    const close = () => { root.remove(); removeEventListener('keydown', onKey, true); };
+    const close = () => { softRemove(root); removeEventListener('keydown', onKey, true); };
     const onKey = (e) => { if (e.key === 'Escape') { close(); e.stopPropagation(); } };
     addEventListener('keydown', onKey, true);
     root.addEventListener('click', (e) => {
@@ -558,9 +682,13 @@
   if (!store.get('snappy.firstSeen')) store.set('snappy.firstSeen', String(Date.now()));
   // time actually spent in the app this session (window in front)
   setInterval(() => { if (document.hasFocus() && !document.hidden) usedMs += 5000; }, 5000);
-  let lastInput = Date.now();
+  // when someone last used this window: the mouse over it, a key, a click (nothing counts until they actually do)
+  let lastInput = 0;
   for (const ev of ['pointermove', 'pointerdown', 'keydown', 'wheel']) addEventListener(ev, () => { lastInput = Date.now(); }, { passive: true, capture: true });
-  const calm = () => !current && !window.Tour?.active && !Work.busy && !Speech.talking && document.hasFocus() && !document.hidden
+  // Nothing plays unless someone is right here: the window in front, and used in the last minute. A window that's
+  // open but unattended (say, after an update) never starts anything by itself.
+  const calm = () => !current && !window.Tour?.active && !window.Terminal?.open && !Work.busy && !Speech.talking && document.hasFocus() && !document.hidden
+    && Date.now() - lastInput < 60000
     && !document.querySelector('.modal-backdrop:not([hidden])') && !(state.view === 'player' && !document.getElementById('video')?.paused);
   const allowed = () => Events.enabled && Speech.enabled && !playedThisSession
     && Date.now() >= Number(store.get('snappy.events.next') || 0)
@@ -572,12 +700,9 @@
     if (usedMs < SETTLE || !allowed() || !calm()) return;
     const idle = Date.now() - lastInput;
     if (idle < 8000 || idle > 180000 || Math.random() > 0.02) return;
-    const pool = [...defs.values()].filter((d) => d.run && d.weight && (!d.after || d.after.every(has)) && (!d.when || d.when()));
+    const pool = [...defs.values()].filter((d) => d.run && d.weight && !d.arcade && (!d.after || d.after.every(has)) && (!d.when || d.when()));
     const fresh = pool.filter((d) => !has(d.id));
-    const rematch = pool.filter((d) => d.again && has(d.id));
-    let from = fresh;
-    if (fresh.length && rematch.length && Math.random() < 0.15) from = rematch;
-    else if (!fresh.length) from = Math.random() < 0.25 ? pool.filter((d) => d.tier !== 'game' || d.again) : [];
+    const from = fresh.length ? fresh : Math.random() < 0.25 ? pool.filter((d) => d.tier !== 'game') : [];
     let roll = Math.random() * from.reduce((n, d) => n + d.weight, 0);
     const pick = from.find((d) => (roll -= d.weight) < 0);
     if (pick?.invite) invite(pick);
@@ -600,7 +725,7 @@
     if (Mascot.expression || Mascot.isTalking) Mascot.reset();
   }, 1200);
 
-  // up up down down left right left right B A, on the Settings page: unlocks the Achievements button
+  // up up down down left right left right B A, on the Settings page: an achievement of its own
   const KONAMI = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a'];
   let konami = 0;
   addEventListener('keydown', (e) => {
@@ -610,9 +735,6 @@
     if (konami < KONAMI.length) return;
     konami = 0;
     Mascot.flash('happy', 1150);
-    const first = !Events.unlocked;
-    store.set('snappy.ach.button', '1');
-    if (first) renderSettings();
     achieve('konami');
     list();
   });
@@ -621,15 +743,35 @@
     enabled: true,
     define(id, def) { defs.set(id, { id, tier: 'common', ...def }); },
     play, achieve, list, has, calm,
+    linger, lasting,
+    // (when the app opens, whatever's still on today is simply there, nothing fades in)
+    aftermath(id, def) { aftermaths.set(id, { id, ...def }); marked = null; setTimeout(() => mark(false, true)); },
+    // starts an event's aftermath right away, in the middle of it (she put it there herself)
+    leaveBehind(id, { instant = false } = {}) { takeOver(id); marked = null; mark(true, instant); },
+    // the aftermaths you've seen, for Settings
+    get aftermaths() { return [...aftermaths.values()].filter((m) => has(m.id) && m.label); },
+    // after a change in Settings
+    remark() { marked = null; mark(); },
+    // the arcade's games, in the order they were defined
+    get arcade() { return [...defs.values()].filter((d) => d.arcade); },
     get count() { return [...defs.values()].filter((d) => !d.system && has(d.id)).length; },
     outfit(id, def) { outfits.set(id, { id, ...def }); },
     // the outfits she has, for Settings
     get outfits() { return [...outfits.values()].filter(owned); },
+    // what an outfit looks like, owned or not (the patch notes show some off)
+    markup: (id) => outfits.get(id)?.markup || null,
     wear, wearNow,
+    // what she is underneath the outfit: null for herself, or e.g. 'program' (her voice and small talk change too)
+    get skin() { return outfits.get(wearing)?.skin || null; },
+    get swapped() { return swapped(); },
+    set swapped(on) {
+      if (on) { store.set('snappy.swapped', String(midnight())); skinOff = false; } else store.set('snappy.swapped', '0');
+      wear(true);
+    },
+    unswap() { store.set('snappy.swapped', '0'); skinOff = true; wear(true); },
     actor, cursor, stage, lift, borrowText, visitSettings,
     // an event that isn't due yet, or isn't allowed right now, doesn't start
     ready: (id) => allowed() && !has(id) && calm(),
-    get unlocked() { return store.get('snappy.ach.button') === '1'; },
     get running() { return current?.id || null; },
     SKIP,
   };

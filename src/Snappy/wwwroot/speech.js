@@ -153,7 +153,11 @@
     const host = anchor();
     if (!host) return;
     const el = document.createElement('div');
-    el.className = 'speech';
+    // in the Program's skin: its lettering, its voice, and its small talk instead of hers (news stays news)
+    const skin = window.Events?.skin;
+    const chatter = skin && item.kind === 'chatter' && Speech.skinChatter?.[skin];
+    if (chatter) item.pages = [chatter[Math.floor(Math.random() * chatter.length)]];
+    el.className = skin ? `speech as-${skin}` : 'speech';
     el.setAttribute('role', 'status');
     el.innerHTML = `<button class="speech-close" aria-label="Close">${icon('close')}</button>
       <div class="speech-text"></div>
@@ -197,7 +201,7 @@
       const page = item.pages[me.page];
       Mascot.face(typeof page === 'object' ? page.face : item.face);
       Mascot.talking(true);
-      me.writer = typewriter(textEl, typeof page === 'object' ? page.text : page, { onWord: () => Mascot.hop(), onCue: cue });
+      me.writer = typewriter(textEl, typeof page === 'object' ? page.text : page, { onWord: () => Mascot.hop(), onCue: cue, ...(skin === 'program' && { voice: programBlip, speed: 31 }) });
       await me.writer.done;
       if (current !== me) return;
       Mascot.talking(false);

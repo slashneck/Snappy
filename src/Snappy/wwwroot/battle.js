@@ -436,4 +436,5 @@
   Events.define('framedrop', {
     tier: 'game', title: 'Frame Drop', hint: 'Something is eating your frames.', run: frameDrop, weight: 2,
   });
+  Events.aftermath('framedrop', { label: 'Her soul', marks: [{ at: '.brand', cls: 'af-pic af-soul' }] });
 })();

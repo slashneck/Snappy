@@ -343,6 +343,7 @@
   });
 
   Events.outfit('maid', { name: 'Maid outfit', markup: MAID, from: 'maid' });
+  Events.aftermath('agreement', { label: 'The signed agreement', marks: [{ at: '.brand', cls: 'af-pic af-scroll' }] });
   // The golden pop-up over a game: one clip in five hundred. Not listed until it happens.
   D('shiny', {
     tier: 'legendary', title: 'Shiny Snappy', hint: 'A golden Snappy saved one of your clips. One clip in five hundred.', hidden: () => true,
@@ -465,7 +466,7 @@
     job: () => Events.play('job'), meet: () => Events.play('meeting'), magic: () => Events.play('magic'),
     tidy: () => Events.play('reality'), float: () => Events.play('gravity'), crack: () => Events.play('maintenance'), bug: () => Events.play('bugfix'),
     spooky: () => Events.play('halloween'), xmas: () => Events.play('christmas'), newyear: () => Events.play('newyear'), heart: () => Events.play('valentine'),
-    fools: () => Events.play('aprilfools'), notes: () => Notes.show(), future: () => Events.play('future'), escape: () => Events.play('escape'), scan: () => Events.play('deepscan'), lag: () => Events.play('framedrop'), compact: () => Events.play('context'), mario: () => Events.play('platformer'), flappy: () => Events.play('flappy'), offline: () => Events.play('offline'), papers: () => Events.play('snapplease'), geo: () => Events.play('geometry'), doodle: () => Events.play('doodle'), cookie: () => Events.play('cookies'), pacman: () => Events.play('snapman'), ware: () => Events.play('ware'), lastclip: () => Events.play('lastclip'), shiny: () => snappy.call('dev.popup', { shiny: true }), replay: () => Events.play('rewind'),
+    fools: () => Events.play('aprilfools'), notes: () => Notes.show(), future: () => Events.play('future'), escape: () => Events.play('escape'), scan: () => Events.play('deepscan'), lag: () => Events.play('framedrop'), compact: () => Events.play('context'), mario: () => Events.play('platformer'), flappy: () => Events.play('flappy'), offline: () => Events.play('offline'), papers: () => Events.play('snapplease'), geo: () => Events.play('geometry'), doodle: () => Events.play('doodle'), cookie: () => Events.play('cookies'), pacman: () => Events.play('snapman'), ware: () => Events.play('ware'), beat: () => Events.play('beat'), isyou: () => Events.play('isyou'), parable: () => Events.play('parable'), miami: () => Events.play('miami'), spire: () => Events.play('spire'), snaptato: () => Events.play('snaptato'), binding: () => Events.play('binding'), safari: () => Events.play('safari'), lastclip: () => Events.play('lastclip'), shiny: () => snappy.call('dev.popup', { shiny: true }), replay: () => Events.play('rewind'),
     doze: () => { lastInput = 0; setTimeout(() => { dozing = true; Mascot.hold('doze', 'paused'); }, 600); },
     work: async () => { Work.begin({ text: Talk.workLine('trim') }); for (let p = 0; p <= 1; p += 0.05) { await new Promise((r) => setTimeout(r, 180)); Work.progress(p); } Work.end(true, Talk.doneLine('trim')); },
     recap: () => Talk.debug('recap'), news: () => Talk.debug('news'), popup: () => snappy.call('dev.popup'),

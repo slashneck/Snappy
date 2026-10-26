@@ -10,6 +10,8 @@
     set(k, v) { try { localStorage.setItem(k, v); } catch { /* a best score might be forgotten, that's all */ } },
   };
   const frame = () => new Promise((res) => requestAnimationFrame(res));
+  // called once when the next game actually starts (past its title card)
+  let claim = null;
 
   const PAL = { ink: '#0a0a0a', white: '#f4f4f4', pink: '#ff9db0', red: '#ff3b30', sky: '#2a1650', sky2: '#5b2a86', gold: '#ffe27a',
     cyan: '#7ee8ff', green: '#9be38c', purple: '#b28cff', minion: '#ff5a6e', minion2: '#a63148', grey: '#6b6b78' };
@@ -208,7 +210,7 @@
         removeEventListener('pointerup', release, true);
       };
       ctx.onEnd(unhook);
-      let last = performance.now();
+      let last = performance.now(), due = 0;
       return {
         el, canvas, g, w, h, keys, mouse,
         get started() { return started; },
@@ -217,11 +219,13 @@
         tap(...ks) { for (const k of ks) if (fresh.has(k)) { fresh.delete(k); return true; } return false; },
         held(...ks) { return ks.some((k) => keys.has(k)); },
         click() { if (!clicks) return false; clicks--; return true; },
-        // the next frame, and how long since the last one (in 60ths of a second, capped)
+        // the next frame, and how long since the last one (in 60ths of a second, capped). About sixty a second
+        // whatever the screen does: on a 144 Hz screen everything that counts frames would run twice as fast.
         async tick() {
           ctx.check();
-          await frame();
+          do await frame(); while (performance.now() < due - 4);
           const now = performance.now(), dt = Math.min(2, (now - last) / 16.67);
+          due = Math.max(due, now - 16.67) + 16.67;
           last = now;
           return dt;
         },
@@ -259,6 +263,10 @@
           fresh.clear();
           clicks = 0;
           last = performance.now();
+          // from here on it counts as played (the arcade's one try a day)
+          const c = claim;
+          claim = null;
+          c?.();
           return true;
         },
         async close() {
@@ -314,5 +322,5 @@
   // the best so far without touching it, or null if there isn't one yet
   const top = (id) => { const v = store.get(`snappy.arcade.${id}`); return v === null ? null : Number(v); };
 
-  window.Arcade = { open, best, top, aim, snappy: pixelSnappy, vector: vectorSnappy, programEye, minion, text, FONTS, PAL, pop };
+  window.Arcade = { open, best, top, aim, onStart(fn) { claim = fn; }, snappy: pixelSnappy, vector: vectorSnappy, programEye, minion, text, FONTS, PAL, pop };
 })();

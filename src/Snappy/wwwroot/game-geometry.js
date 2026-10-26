@@ -273,6 +273,6 @@
   }
 
   Events.define('geometry', {
-    tier: 'game', title: 'Geometry Snap', hint: 'One button. How hard can it be?', run: geometry, weight: 1, again: true,
+    tier: 'game', title: 'Geometry Snap', hint: 'One button. How hard can it be?', run: geometry, weight: 1, arcade: true, unit: 'attempts',
   });
 })();

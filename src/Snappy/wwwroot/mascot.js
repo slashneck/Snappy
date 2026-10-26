@@ -409,12 +409,21 @@
     // one coming off is on its way out: a new one gets drawn fresh
     let outfit = host.querySelector('.m-outfit:not(.off)');
     if (!markup) { outfit?.classList.add('off'); setTimeout(() => outfit?.remove(), 350); return; }
+    if (outfit?.dataset.markup === markup) return;
+    // a different one: the old one comes off and the new one goes on (unless she walked in wearing it)
+    if (outfit && !worn) {
+      const old = outfit;
+      old.classList.add('off');
+      setTimeout(() => old.remove(), 350);
+      outfit = null;
+    }
     if (!outfit) {
       outfit = document.createElementNS('http://www.w3.org/2000/svg', 'g');
       outfit.setAttribute('class', worn ? 'm-outfit worn' : 'm-outfit');
       host.appendChild(outfit);
     }
     outfit.innerHTML = markup;
+    outfit.dataset.markup = markup;
   }
 
   // Only one Snappy on screen: while a big one is out (a tour, a surprise, her work bubble), every other copy of her
