@@ -70,21 +70,28 @@
       if (top + box.offsetHeight > innerHeight - 12) top = Math.max(12, a.y - 12 - box.offsetHeight);
       box.style.top = `${Math.round(top)}px`;
     };
+    // its expressions, as cues in its lines like hers: {annoyed} half shuts the eyelid, {wide} opens it right up
+    const face = (f) => { el.classList.toggle('annoyed', f === 'annoyed'); el.classList.toggle('wide', f === 'wide'); };
+    const appear = async () => {
+      if (shown) return;
+      shown = true;
+      Speech.tune('scan', 0.6);
+      void el.offsetWidth;
+      el.classList.add('in');
+      await ctx.wait(420);
+    };
     const me = {
       el,
+      face,
       async say(line, { hold, alert = false, near } = {}) {
         ctx.check();
-        if (!shown) {
-          shown = true;
-          Speech.tune('scan', 0.6);
-          void el.offsetWidth;
-          el.classList.add('in');
-          await ctx.wait(420);
-        }
+        await appear();
         el.classList.toggle('alert', alert);
         box.classList.toggle('alert', alert);
-        // the text is laid out before the box pops, so it never changes size while it types
-        const w = Speech.typewriter(text, line, { speed: 31, voice: Speech.programBlip, onWord: () => { Speech.programWord(); pulse(); }, pauses });
+        // the text is laid out before the box pops, so it never changes size while it types (and a line that starts
+        // with a face starts on it, instead of blinking back to plain first)
+        face(line.match(/^\{([a-z]+)\}/)?.[1] || null);
+        const w = Speech.typewriter(text, line, { speed: 31, voice: Speech.programBlip, onWord: () => { Speech.programWord(); pulse(); }, onCue: face, pauses });
         if (near) place(near);
         box.classList.remove('in');
         void box.offsetWidth;
@@ -93,6 +100,33 @@
         ctx.writers.add(w);
         try { await ctx.run(w.done); } finally { ctx.writers.delete(w); el.classList.remove('speaking'); }
         await ctx.wait(Speech.readTime(line, hold));
+      },
+      // Looking something up: the dot rises and splits into three that go round like a buffering wheel, then they
+      // gather back into one, and it comes back in wide. It found something.
+      async search(ms = 2400) {
+        ctx.check();
+        await appear();
+        face(null);
+        const dots = document.createElement('b');
+        dots.className = 'pg-dots';
+        dots.innerHTML = '<s></s><s></s><s></s>';
+        eye.appendChild(dots);
+        try {
+          eye.classList.add('rise');
+          await ctx.wait(330);
+          eye.classList.add('split');
+          void dots.offsetWidth;
+          dots.classList.add('spread', 'spin');
+          await ctx.wait(ms);
+          dots.classList.replace('spread', 'gather');
+          await ctx.wait(360);
+        } finally {
+          dots.remove();
+          eye.classList.add('found');
+          eye.classList.remove('rise', 'split');
+          face('wide');
+          setTimeout(() => eye.classList.remove('found'), 450);
+        }
       },
       // someone else is talking
       hush() { box.classList.remove('in'); },

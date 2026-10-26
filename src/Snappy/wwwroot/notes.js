@@ -18,6 +18,47 @@
   // then has the exchange in `talk` with her (['p' or 's', line] each), or its usual one.
   // Achievements are never named here: there are some to find, that's all.
   const NOTES = {
+    '1.5.0': {
+      title: 'The one with the terminal. That is it.',
+      intro: ['{shine}Patch notes! {pause}{joy}A whole new version!', "{smug}Let's see everything that's new!"],
+      sections: [
+        { name: 'New', kind: 'new', items: [
+          { text: 'The terminal talks now. Some words get the three of us chatting: Claude, the Program and me. A lot of words. All of them secret.', say: "{smug}I can't tell you which ones. {pause}{worried}Especially not the... {pause}{shock}nothing. Never mind." },
+          { text: 'Stuck? Type hint in the terminal. You get a riddle, not the answer.', say: '{wink}Riddles. Not cheats.' },
+          { text: 'Leave the terminal open and quiet for a minute, and the Program and Claude start talking among themselves. Sometimes I join in.', say: '{love}Like a podcast that never ends.' },
+          { text: 'Two new outfits, earned in the terminal. We do not talk about one of them.', say: '{worried}We really do not.' },
+          { text: 'The Program has expressions now.', by: 'program', talk: [
+            ['p', '{annoyed}It is one eyelid.'],
+            ['s', '{joy}And it is SO expressive!'],
+            ['p', '{annoyed}...'],
+            ['s', '{smug}See? {pause}That one was annoyed.'],
+          ] },
+        ] },
+        { name: 'Better', kind: 'better', items: [
+          { text: 'Nothing. Everyone was busy in the terminal.', gag: 'tumbleweed' },
+        ] },
+        { name: 'Fixed', kind: 'fixed', items: [
+          { text: 'Developer mode was switching itself on. It stays off now, until you switch it on yourself.', by: 'program', talk: [
+            ['p', 'I insisted.'],
+            ['s', "{wink}It's in Settings, About. {pause}{worried}...I didn't say that."],
+          ] },
+        ] },
+        { name: 'Known issues', kind: 'known', items: [
+          { text: 'This update is only the terminal.', by: 'program', talk: [
+            ['s', '{worried}Only the terminal? {pause}No new games? {pause}No new stories?'],
+            ['p', 'Eighty-four conversations.'],
+            ['s', '{shock}...EIGHTY-FOUR?'],
+            ['p', 'And one tumbleweed.'],
+            ['s', '{smug}Best update ever.'],
+          ] },
+          { text: 'The games are still incredibly unbalanced.', by: 'program', talk: [
+            ['s', '{flat}Eventually.'],
+            ['p', 'Eventually.'],
+          ] },
+        ] },
+      ],
+      outro: ["{flat}That's... {pause}everything.", '{wink}See you in the terminal.'],
+    },
     '1.4.0': {
       title: 'The one with the arcade',
       intro: ['{shine}Patch notes! {pause}Again!', '{smug}I have been practicing my reading voice.'],
@@ -186,6 +227,27 @@
       a.root.classList.add('pn-smooth');
       await S('{happy}After!', { hold: 1300 });
       a.root.classList.remove('pn-smooth');
+    },
+    // nothing else in this update: a tumbleweed rolls through, and she watches it go
+    async tumbleweed(ctx, a, S) {
+      const weed = document.createElement('div');
+      weed.className = 'pn-weed';
+      weed.innerHTML = `<span><svg viewBox="0 0 64 64"><g fill="none" stroke="#a9824c" stroke-linecap="round" stroke-linejoin="round">
+        <path stroke-width="3" d="M32 7 Q50 9 56 26 Q60 44 46 54 Q30 61 16 52 Q5 41 9 24 Q15 9 32 7 M54 20 L61 13 M10 47 L3 51"/>
+        <path stroke-width="2.4" d="M12 26 Q32 6 52 30 Q38 56 14 40 Q20 18 44 16 Q58 36 34 52 Q16 46 22 24"/>
+        <path stroke-width="2" d="M18 50 Q30 30 50 44 M24 12 Q36 30 30 56 M8 34 Q30 40 56 22 M40 10 Q22 32 46 50"/>
+        <path stroke-width="1.6" stroke="#c9a46a" d="M16 18 Q34 26 26 44 Q20 30 40 30 Q50 40 36 46"/></g></svg></span>`;
+      document.body.appendChild(weed);
+      ctx.onEnd(() => weed.remove());
+      Speech.tune('whoosh', 0.5);
+      void weed.offsetWidth;
+      weed.classList.add('go');
+      await ctx.wait(700);
+      a.lookAt(innerWidth / 2, innerHeight * 0.82, true);
+      await S('{flat}...', { hold: 1200 });
+      await ctx.wait(1300);
+      weed.remove();
+      await S('{worried}That was the whole section.');
     },
     // a little sideways shuffle with frames missing, then the same one smooth
     async stutter(ctx, a, S) {

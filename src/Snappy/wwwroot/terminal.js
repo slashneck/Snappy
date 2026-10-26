@@ -1,8 +1,9 @@
-// The terminal: the little >_ button next to the arcade's controller, there only in developer mode. You get that by
-// tapping the version number in Settings, About seven times (like a phone's developer options), and a story with a
-// terminal in it switches it on once by itself; Settings, About can turn it off again. Then you type at it: help, a few
-// real things (your clips, storage, the folder), a lot of nonsense, and some commands nobody lists. Everything is
-// written ahead of time: nothing here goes online, and nothing deletes or changes anything you didn't ask for.
+// The terminal: the little >_ button next to the arcade's controller. It's there from the start, but it only opens in
+// developer mode, which is off until you switch it on. Click it before that and the Program takes it away, and Snappy
+// whispers where developer mode is (Settings, About; tapping the version seven times works too, like a phone). Then you
+// type at it: help, a few real things (your clips, storage, the folder), a lot of nonsense, and some commands nobody
+// lists. Everything is written ahead of time: nothing here goes online, and nothing deletes or changes anything you
+// didn't ask for.
 (() => {
   const wait = (ms) => new Promise((res) => setTimeout(res, ms));
   const pick = (list) => list[Math.floor(Math.random() * list.length)];
@@ -10,12 +11,10 @@
     get(k) { try { return localStorage.getItem(k); } catch { return null; } },
     set(k, v) { try { localStorage.setItem(k, v); } catch { /* fine */ } },
   };
-  // the stories that have a terminal in them: the first one you see switches developer mode on
-  const UNLOCKS = ['claude', 'credits', 'scream', 'swap', 'debug', 'context', 'earlybird'];
   const unlocked = () => !!state.settings?.developerMode;
-  const modeFound = () => store.get('snappy.term.found.mode') === '1';
+  // the Program took the button away once: from then on it's only there in developer mode
+  const taken = () => store.get('snappy.term.taken') === '1';
   async function developer() {
-    store.set('snappy.term.found.mode', '1');
     await saveSettings((s) => { s.developerMode = true; });
     refreshButton();
   }
@@ -47,14 +46,35 @@
   button.innerHTML = '<span>&gt;_</span>';
   button.hidden = true;
   document.querySelector('.brand')?.appendChild(button);
-  // only there in developer mode (and gone, terminal and all, when it's switched off)
+  // there until the Program confiscates it, and after that only in developer mode (closing the terminal if it goes off)
   function refreshButton() {
-    button.hidden = !unlocked();
-    if (button.hidden) close();
-    if (!modeFound() && state.settings && UNLOCKS.some((id) => Events.has(id))) developer();
+    if (button.classList.contains('taken')) return;
+    // (1.4.0 switched developer mode on by itself for anyone who had seen a terminal story: it starts off again, once)
+    if (state.settings && !store.get('snappy.term.reset')) {
+      store.set('snappy.term.reset', '1');
+      if (state.settings.developerMode && store.get('snappy.term.found.mode') === '1') saveSettings((x) => { x.developerMode = false; });
+    }
+    button.hidden = !unlocked() && taken();
+    button.classList.toggle('locked', !unlocked());
+    if (!unlocked()) close();
   }
   setTimeout(refreshButton);
   setInterval(refreshButton, 4000);
+
+  // the first click without developer mode: access denied, the button goes, and Snappy has a tip
+  async function confiscate() {
+    if (Events.running) return;
+    store.set('snappy.term.taken', '1');
+    Speech.tune('glitch', 0.3);
+    programLines = [['ACCESS DENIED.', { alert: true }], ['Terminal access requires developer mode.', {}], ['{annoyed}I am confiscating this.', {}]];
+    const shown = Events.play('termprogram');
+    setTimeout(() => { button.classList.add('taken'); Speech.tune('whoosh', 0.4); }, 3800);
+    setTimeout(() => { button.classList.remove('taken'); refreshButton(); }, 4500);
+    await shown;
+    await wait(700);
+    Speech.say("{worried}Psst... {pause}{wink}there's a developer mode in Settings, About. {pause}Don't tell the Program I told you.", { kind: 'news', interrupt: true });
+    if (state.view === 'settings') renderSettings();
+  }
 
   // ---------------------------------------------------------------------------
   // The panel
@@ -65,7 +85,7 @@
   const promptText = () => `snappy@library:${cwd}$`;
 
   function open() {
-    if (!unlocked()) return;
+    if (!unlocked()) { confiscate(); return; }
     if (panel) { input.focus(); return; }
     panel = document.createElement('div');
     panel.className = 'term';
@@ -80,6 +100,8 @@
     panel.querySelector('.term-x').addEventListener('click', close);
     panel.addEventListener('pointerdown', (e) => { if (!e.target.closest('button')) setTimeout(() => input.focus()); });
     input.addEventListener('keydown', onKey);
+    talkAt = 0;
+    stir();
     setTimeout(() => input.focus(), 60);
     window.Terminal.open = true;
     if (!store.get('snappy.term.welcomed')) {
@@ -88,8 +110,10 @@
         ['Please do not let Snappy near sudo.', 'claude']]);
     } else print([[pick(['Welcome back.', 'Terminal ready.', 'Hello again.', 'The Program is watching. Type away.']), 'dim']]);
   }
-  function close() {
+  function close(keep) {
     if (!panel) return;
+    // (closing it ends whatever conversation was going on in it, unless it's the conversation that closes it)
+    if (keep !== true) sceneCtx?.cancel();
     const p = panel;
     panel = null;
     window.Terminal.open = false;
@@ -122,14 +146,149 @@
       d.textContent = text;
       out?.appendChild(d);
       if (out) out.scrollTop = out.scrollHeight;
+      if (cls === 'claude') pulse();
       if (gap) await wait(gap);
     }
   }
+  // the terminal lights up while Claude talks, a little flash for every word
+  const pulse = () => { if (!panel) return; panel.classList.remove('word'); void panel.offsetWidth; panel.classList.add('word'); };
+  const glow = (on) => panel?.classList.toggle('speaking', on);
+
+  // ---------------------------------------------------------------------------
+  // Conversations: hidden words that get the three of them talking. Nobody goes anywhere: Snappy talks from her
+  // corner, the Program from the top of the window, Claude right here, and the terminal writes it all down.
+  //   Terminal.chat(words, beats)   beats: ['s', line] Snappy, ['p', line] the Program, ['c', line] Claude,
+  //   ['run', command, { by }] typed at the prompt, ['out', text, { cls }] printed, ['w', ms], ['fx', (env) => ...],
+  //   ['r', face] Snappy pulling a face without a word (she listens a lot), env.leave() Claude closing the terminal
+  //   and walking out of the scene, { cut: true } on her line for whoever talks over her
+  //   (a line can be a function, for things like the number of clips)
+  // ---------------------------------------------------------------------------
+  let scene = null, sceneCtx = null;
+  const plain = (t) => t.replace(/\{[a-z]+\}/g, '').replace(/\s+/g, ' ').trim();
+  // whoever isn't talking looks at whoever is: her eyes from the corner, the Program's eye from the top
+  const her = () => document.getElementById('mascot');
+  function eyesOn(el) {
+    const me = her(), m = me?.getBoundingClientRect(), r = el?.getBoundingClientRect();
+    if (!m?.width || !r) return;
+    const dx = r.left + r.width / 2 - (m.left + m.width / 2), dy = r.top + r.height / 2 - (m.top + m.height * 0.52);
+    const d = Math.hypot(dx, dy) || 1;
+    Mascot.gaze(me, [dx / d, dy / d], true);
+  }
+  const across = (el) => { const r = el?.getBoundingClientRect(); return r ? (r.left + r.width / 2 - innerWidth / 2) / (innerWidth / 2) : 0; };
+  Events.define('termchat', { system: true, quick: true, title: 'Conversation', run: (ctx) => perform(ctx, scene) });
+  async function perform(ctx, beats) {
+    sceneCtx = ctx;
+    ctx.onEnd(() => { sceneCtx = null; glow(false); stir(BETWEEN); Mascot.gaze(her(), null); Mascot.face(null); });
+    // (it's her conversation too: if the Program is the camera right now, she comes back for it)
+    if (Events.skin) { Events.unswap(); await ctx.wait(900); }
+    const prog = Program.program(ctx);
+    const top = { center: { x: innerWidth / 2 }, y: 64, size: 0 };
+    const env = {
+      ctx, prog, print: (text, cls = 'dim') => print([[text, cls]]),
+      glitch: (strong) => ClaudeKit.glitch(ctx, strong),
+      flash() { const f = document.createElement('div'); f.className = 'tc-flash'; document.body.appendChild(f); setTimeout(() => f.remove(), 1000); },
+      tune: (name, volume) => Speech.tune(name, volume),
+      // Claude walks out: the terminal closes, and the other two carry on without it
+      leave: () => close(true),
+      // and wipes the screen, like Ctrl+L
+      clear: () => { if (out) out.textContent = ''; },
+    };
+    for (const [kind, x, o = {}] of beats) {
+      ctx.check();
+      const line = typeof x === 'function' && kind !== 'fx' ? x() : x;
+      if (kind === 's') {
+        prog.hush();
+        Mascot.gaze(her(), null);
+        prog.look(across(her()));
+        await ctx.run(new Promise((res) => { Speech.say(line, { kind: 'news', interrupt: true, force: true, onTyped: res }); setTimeout(res, 3000 + line.length * 70); }));
+        await print([[plain(line), 'log-snappy']], 0);
+        // (cut: someone talks over her the moment she's typed it)
+        if (!o.cut) await ctx.wait(Speech.readTime(plain(line), o.hold));
+      } else if (kind === 'p') {
+        Speech.hush();
+        eyesOn(prog.el);
+        prog.look(0);
+        await prog.say(line, { near: top, hold: o.hold, alert: !!o.alert });
+        await print([[plain(line), 'log-program']], 0);
+      } else if (kind === 'c') {
+        prog.hush();
+        Speech.hush();
+        eyesOn(panel);
+        prog.look(across(panel));
+        await claudeSays(ctx, line, o.hold);
+      } else if (kind === 'run') {
+        prog.hush();
+        eyesOn(panel);
+        prog.look(across(panel));
+        await typed(ctx, line, o.by);
+      } else if (kind === 'r') {
+        Speech.cue(line);
+        await ctx.wait(o.hold || 700);
+      } else if (kind === 'out') await print([[line, o.cls || 'dim']], 0);
+      else if (kind === 'w') await ctx.wait(x);
+      else if (kind === 'fx') await x(env);
+    }
+    await ctx.wait(500);
+    prog.hush();
+  }
+  async function claudeSays(ctx, line, hold) {
+    if (!out) return;
+    const d = document.createElement('div');
+    d.className = 'term-line claude';
+    out.appendChild(d);
+    out.scrollTop = out.scrollHeight;
+    glow(true);
+    const w = Speech.typewriter(d, line, { speed: 30, voice: Speech.claudeBlip, onWord: () => { Speech.claudeWord(); pulse(); out && (out.scrollTop = out.scrollHeight); } });
+    ctx.writers.add(w);
+    try { await ctx.run(w.done); } finally { ctx.writers.delete(w); glow(false); }
+    await ctx.wait(Speech.readTime(line, hold));
+  }
+  // someone typing at the prompt, a key at a time
+  async function typed(ctx, cmd, by = 'claude') {
+    if (!out) return;
+    const d = document.createElement('div');
+    d.className = `term-line cmd by-${by}`;
+    d.innerHTML = `<span class="term-who">${by === 'snappy' ? 'snappy@library:~$' : 'claude@snappy:~$'}</span> <span></span>`;
+    out.appendChild(d);
+    const field = d.lastChild;
+    if (by === 'claude') glow(true);
+    for (const ch of cmd) {
+      field.textContent += ch;
+      Speech.tune('key', 0.45);
+      if (by === 'snappy' && /\w/.test(ch) && Math.random() < 0.3) Speech.blip();
+      out.scrollTop = out.scrollHeight;
+      await ctx.wait((by === 'snappy' ? 70 : 42) * (0.6 + Math.random() * 0.8));
+    }
+    glow(false);
+    await ctx.wait(350);
+  }
+  // registers a conversation under its words (all of them hidden); beats can also be a function that picks them
+  function chat(words, beats) { cmd(words, '', () => converse(beats), { hidden: true }); }
+  async function converse(beats) {
+    if (Events.running) { await say(['(they are busy right now)', 'dim']); return; }
+    await say(['(Esc skips)', 'dim']);
+    scene = typeof beats === 'function' ? beats() : beats;
+    await Events.play('termchat');
+  }
+  // Left open and quiet with the window in front, they start talking among themselves: the first time after a
+  // minute, then again a few minutes after the last conversation ended. Typing puts it off. Terminal.smallTalk says
+  // what about.
+  const QUIET = 60000, BETWEEN = 4 * 60000;
+  let talkAt = 0;
+  const stir = (ms = QUIET) => { talkAt = Math.max(talkAt, Date.now() + ms); };
+  setInterval(() => {
+    if (!panel || busy || sceneCtx || Events.running || !window.Terminal.smallTalk) return;
+    if (Date.now() < talkAt || !document.hasFocus() || document.hidden) return;
+    print([['(they started talking among themselves)', 'dim']], 0);
+    converse(window.Terminal.smallTalk);
+  }, 5000);
   const say = (...lines) => print(lines);
 
   function onKey(e) {
     e.stopPropagation();
-    if (e.key === 'Escape') { e.preventDefault(); close(); return; }
+    stir();
+    // (Esc in the middle of a conversation only skips it)
+    if (e.key === 'Escape') { e.preventDefault(); if (!sceneCtx) close(); return; }
     if (e.key === 'ArrowUp') { e.preventDefault(); if (hIndex > 0) { hIndex--; input.value = history[hIndex]; } return; }
     if (e.key === 'ArrowDown') { e.preventDefault(); if (hIndex < history.length) { hIndex++; input.value = history[hIndex] || ''; } return; }
     if (e.key === 'Tab') {
@@ -226,7 +385,7 @@
       lines.push(['', ''], [title, 'head']);
       for (const [n, h] of GROUPS[g]) lines.push([`  ${n.padEnd(14)} ${h}`, '']);
     }
-    lines.push(['', ''], [`Some commands are not on this list. ${found.size ? `You have found ${found.size}.` : 'Type hint if you get stuck.'}`, 'dim']);
+    lines.push(['', ''], [`Some words are not on this list. A lot of them get the three of them talking. ${found.size ? `You have found ${found.size}. ` : ''}Type hint for a nudge.`, 'dim']);
     await print(lines, 12);
   }, { group: 'basics' });
   cmd('guide', 'how a terminal works', () => say(
@@ -238,11 +397,53 @@
   cmd(['exit', 'quit', 'close', 'logout'], 'close the terminal', async () => { await say(['Bye!', 'ok']); she(pick(['{wink}Come back soon!', '{happy}Bye bye!', '{smug}It was getting crowded in there anyway.'])); setTimeout(close, 400); }, { group: 'basics' });
   cmd('history', 'what you typed before', () => print(history.slice(-15).map((h, i) => [`  ${String(history.length - Math.min(15, history.length) + i + 1).padStart(3)}  ${h}`, 'dim']), 10), { group: 'basics' });
   cmd('echo', 'say something back', (args) => say(args.join(' ') || ''), { group: 'basics' });
-  const HINTS = ['An old magic word from a cave still works here.', 'The Program does not like being asked for sandwiches. Ask anyway.', 'Some games have cheat codes. Some of those work here.',
-    'Files that start with a dot are shy. ls has a way of seeing them.', 'Being polite works more often than you would think.', 'Ask the question. The answer is a number.',
-    'Every Jedi knows what to say back.', 'Try saying hi to the Program directly.', 'Some tables were not meant to stay upright.', 'Some sayings are about cake.'];
-  let nextHint = Math.floor(Math.random() * HINTS.length);
-  cmd('hint', 'for when you are stuck', () => say([`hint: ${HINTS[nextHint++ % HINTS.length]}`, 'dim']), { group: 'basics' });
+  // hint: a nudge toward something you haven't found yet. A riddle, never the word itself.
+  const HINTS = new Map();
+  const hints = (map) => { for (const [name, text] of Object.entries(map)) HINTS.set(name, text); };
+  let lastHint = '';
+  cmd('hint', 'a nudge toward something hidden', () => {
+    const hidden = new Set([...[...COMMANDS.values()].filter((c) => c.hidden).map((c) => c.name), ...EXTRA]);
+    const missing = [...hidden].filter((n) => !found.has(n));
+    const left = missing.filter((n) => HINTS.has(n));
+    if (!left.length) return say(['You have found everything there is to find.', 'secret'], ['The Program is impressed. Against its will.', 'dim']);
+    lastHint = pick(left.length > 1 ? left.filter((n) => n !== lastHint) : left);
+    return say([`hint: ${HINTS.get(lastHint)}`, 'dim'], [`(${missing.length} still hidden)`, 'dim']);
+  }, { group: 'basics' });
+  hints({
+    xyzzy: 'An old magic word from a cave still works here.',
+    plugh: 'That cave had more than one magic word.',
+    'make me a sandwich': 'Ask it to make you lunch.',
+    'sudo make me a sandwich': 'Ask for lunch again. This time as the administrator.',
+    sudo: 'There is one word that makes a terminal take you seriously. It will not work for you.',
+    42: 'Ask the big question about life. The answer is a number.',
+    'hello there': 'Every Jedi knows what to say back. Say it first.',
+    'the cake': 'A famous puzzle game made a promise about dessert. It was a lie.',
+    uwu: 'The Program has asked people never to type a certain cute face made of letters.',
+    'do a barrel roll': 'A fox pilot once got some advice. Take it.',
+    ':q': 'People get stuck in one old text editor for years. Try to leave it the way it wants.',
+    vim: 'Name the text editor nobody can quit.',
+    coffee: 'Ask it to brew something. It is not that kind of machine.',
+    iddqd: 'An old demon-slaying game had a code for being unkillable.',
+    idkfa: 'The same demon game had a code for every weapon at once.',
+    motherlode: 'A game about little people living their lives had a code for money.',
+    'up up down down left right left right b a': 'The most famous cheat code ever. Arrows first, then two letters.',
+    please: 'Being polite works more often than you would think.',
+    boop: 'What do you say when you poke someone on the nose?',
+    'snappy is you': 'One of the arcade games is made of rules. Say one out loud.',
+    'flip table': 'Some tables were not meant to stay upright.',
+    'i love you': 'Tell her how you feel. Three words.',
+    'who made you': 'Ask them where they came from.',
+    'hello world': "Every programmer's first program says the same two words.",
+    password: 'Ask for the password. You will not get it.',
+    lag: 'Name her worst enemy. One word.',
+    sing: 'Ask her for a song.',
+    sleep: 'Wish her good night.',
+    'hi program': 'Try saying hi to the Program directly.',
+    'thank you': 'Say thanks. Someone here appreciates it.',
+    'ls -a': 'Files that start with a dot are shy. ls has a way of seeing them.',
+    'cat .secret_cookie': 'Someone hid a snack among the shy files. Read it.',
+    'cat .program_diary': 'The Program keeps a diary among the shy files. Read it, if you dare.',
+  });
 
   // ----- your stuff (real, read-only unless you ask)
   const clipsNow = () => state.library?.clips || [];
@@ -435,5 +636,5 @@
   cmd(['thank you', 'thanks', 'ty'], '', () => { she('{love}Aww. {pause}You\'re welcome!'); return say(['you\'re welcome :)', 'ok']); }, H);
 
   // nothing starts on its own while you're typing, and the >_ key stays out of the way of games and stories
-  window.Terminal = { open: false, show: open, close, refresh: refreshButton, found: modeFound };
+  window.Terminal = { open: false, show: open, close, refresh: refreshButton, found: () => taken() || unlocked(), chat, hints };
 })();

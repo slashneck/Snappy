@@ -128,7 +128,8 @@
     if (Speech.waiting) return;
     const pages = Array.isArray(text) ? text : [text];
     const actions = opts.actions || (opts.action ? [opts.action] : []);
-    const item = { pages, face: opts.face || null, actions, kind: opts.kind || 'chatter', key: opts.key || null, hold: opts.hold, force: !!opts.force, at: Date.now() };
+    // onTyped: called once she has typed it all out (or it got cut short), for a conversation to go on from there
+    const item = { pages, face: opts.face || null, actions, kind: opts.kind || 'chatter', key: opts.key || null, hold: opts.hold, force: !!opts.force, at: Date.now(), onTyped: opts.onTyped };
     if (opts.interrupt) { queue.length = 0; current?.close('dismissed'); quietUntil = 0; }
     if (item.key && (queue.some((q) => q.key === item.key) || current?.item.key === item.key)) return;
     if (item.kind === 'chatter') {
@@ -175,6 +176,7 @@
       current = null;
       clearTimeout(me.hideTimer);
       me.writer?.finish();
+      item.onTyped?.();
       Mascot.talking(false);
       Mascot.face(null);
       el.classList.add('leaving');
@@ -213,6 +215,7 @@
         const actions = el.querySelector('.speech-actions');
         if (actions) actions.hidden = false;
         armHide();
+        item.onTyped?.();
       }
     };
     const next = () => {

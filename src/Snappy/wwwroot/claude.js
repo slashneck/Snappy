@@ -61,6 +61,8 @@
         el.classList.toggle('full', p >= 90);
       },
       talking(on) { el.classList.toggle('talking', on); },
+      // a little flash of light on every word Claude says
+      pulse() { el.classList.remove('word'); void el.offsetWidth; el.classList.add('word'); },
       dim(on) { el.classList.toggle('dim', on); },
       async close() {
         el.classList.add('closing');
@@ -91,7 +93,7 @@
     return {
       async say(line, { near, hold } = {}) {
         ctx.check();
-        const w = Speech.typewriter(text, line, { speed: 30, voice: Speech.claudeBlip, onWord: Speech.claudeWord, pauses });
+        const w = Speech.typewriter(text, line, { speed: 30, voice: Speech.claudeBlip, onWord: () => { Speech.claudeWord(); term.pulse?.(); }, pauses });
         place(near);
         box.classList.remove('in');
         void box.offsetWidth;

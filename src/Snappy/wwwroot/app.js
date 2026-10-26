@@ -1106,7 +1106,7 @@ function renderSettings() {
       ${row('Update automatically', 'Checks GitHub every few hours. A new version downloads in the background and installs once your PC has been idle for 10 minutes.', toggle('checkForUpdates', s.checkForUpdates))}
       ${Notes.versions().length ? row('Patch notes', 'Everything that changed, version by version, the way Snappy tells it.',
         Notes.versions().slice(0, 4).map((v) => `<button class="btn ghost" data-action="whatsNew" data-version="${esc(v)}">${esc(v)}</button>`).join('')) : ''}
-      ${s.developerMode || Terminal.found() ? row('Developer mode', 'The terminal next to the arcade. Off hides it again.', toggle('developerMode', !!s.developerMode)) : ''}
+      ${s.developerMode || Terminal.found() ? row('Developer mode', 'Opens up the terminal next to the arcade.', toggle('developerMode', !!s.developerMode)) : ''}
       ${row('Source code', 'Snappy is free software under the GPL 3.0 license.', '<button class="btn ghost" data-action="openGithub">Open GitHub</button>')}
       ${row('Licenses and credits', 'The projects Snappy is built with.', '<button class="btn ghost" data-action="licenses">View</button>')}
       ${row('Log file', 'Handy when reporting a problem.', '<button class="btn ghost" data-action="openLog">Open</button>')}

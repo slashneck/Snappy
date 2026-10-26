@@ -126,7 +126,7 @@
   const REACT_EYES = { love: 'heart', dizzy: 'dizzy', pet: 'happy', rub: 'happy' };
   // {love} is heart eyes, for when she's flattered or fond; {joy} is bright, sparkly eyes for when she's just thrilled
   const SPEECH_EYES = { wink: 'wink', shine: 'shine', worried: 'open', happy: 'happy', love: 'heart', joy: 'joy', heart: 'heart', dollar: 'dollar',
-    flat: 'flat', shock: 'shock', angry: 'angry', sad: 'sad', smug: 'smug', ew: 'ew', load: 'load' };
+    flat: 'flat', shock: 'shock', angry: 'angry', sad: 'sad', smug: 'smug', ew: 'ew', load: 'load', sleep: 'sleep' };
   const ONE_SHOT = new Set(['clipping', 'happy', 'error']);
   const reactions = ['pet', 'love', 'dizzy', 'rub'];
 
@@ -403,27 +403,32 @@
 
   // An outfit (SVG in her own coordinates) drawn on her body, so it moves with her. Null takes it off. Worn means
   // she already had it on (another copy of her is taking over), so it doesn't pop on again.
+  // An outfit is drawn over her; anything after a <!--behind--> marker goes behind her body instead (ears that grow out
+  // from under her outline, say).
   function dress(el, markup, worn = false) {
     const host = el?.querySelector('.m-talk');
     if (!host) return;
     // one coming off is on its way out: a new one gets drawn fresh
-    let outfit = host.querySelector('.m-outfit:not(.off)');
-    if (!markup) { outfit?.classList.add('off'); setTimeout(() => outfit?.remove(), 350); return; }
+    let outfit = host.querySelector('.m-outfit:not(.off):not(.behind)');
+    let back = host.querySelector('.m-outfit.behind:not(.off)');
+    const off = (g) => { if (!g) return; g.classList.add('off'); setTimeout(() => g.remove(), 350); };
+    if (!markup) { off(outfit); off(back); return; }
     if (outfit?.dataset.markup === markup) return;
     // a different one: the old one comes off and the new one goes on (unless she walked in wearing it)
-    if (outfit && !worn) {
-      const old = outfit;
-      old.classList.add('off');
-      setTimeout(() => old.remove(), 350);
-      outfit = null;
-    }
-    if (!outfit) {
-      outfit = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-      outfit.setAttribute('class', worn ? 'm-outfit worn' : 'm-outfit');
-      host.appendChild(outfit);
-    }
-    outfit.innerHTML = markup;
+    if (outfit && !worn) { off(outfit); off(back); outfit = back = null; }
+    const [front, behind] = markup.split('<!--behind-->');
+    const layer = (cls) => {
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      g.setAttribute('class', `${worn ? 'm-outfit worn' : 'm-outfit'}${cls}`);
+      return g;
+    };
+    if (!outfit) { outfit = layer(''); host.appendChild(outfit); }
+    outfit.innerHTML = front;
     outfit.dataset.markup = markup;
+    if (behind) {
+      if (!back) { back = layer(' behind'); host.insertBefore(back, host.firstChild); }
+      back.innerHTML = behind;
+    } else off(back);
   }
 
   // Only one Snappy on screen: while a big one is out (a tour, a surprise, her work bubble), every other copy of her
