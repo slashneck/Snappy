@@ -8,7 +8,8 @@
   const run = (cmd, by) => ['run', cmd, { by }], out = (t, cls) => ['out', t, { cls }], w = (ms) => ['w', ms], fx = (f) => ['fx', f];
   const r = (face, hold) => ['r', face, { hold }];
   const slot = () => document.getElementById('mascot');
-  const wear = (markup) => fx(({ tune }) => { Mascot.dress(slot(), markup); tune('glitch', 0.4); });
+  // (by its outfit id, so she has its voice and bubble straight away, not only once the story is over)
+  const wear = (id) => fx(({ tune }) => { Events.wearNow(id, { pop: true }); tune('glitch', 0.4); });
   const unlock = (id, outfit) => fx(() => { Events.achieve(id); Events.keepOn(outfit); });
   // an accent only touches the words of a line, never its face cues
   const words = (line, fn) => line.split(/(\{[a-z]+\})/).map((part) => (/^\{[a-z]+\}$/.test(part) ? part : fn(part))).join('');
@@ -63,7 +64,7 @@
     run('seance --end'),
     out('seance: the spirit has found a new home', 'err'),
     w(700),
-    wear(GHOST),
+    wear('ghostskin'),
     w(1200),
     s('{worried}...Why can I see through my hands. {pause}I do not HAVE hands. {pause}{shock}WHY CAN I SEE THROUGH ME.'),
     c('It possessed her. Gently.'),
@@ -114,7 +115,7 @@
     p('No.'),
     c('Just the look. For a day.'),
     run('snappy.style = "1972"'),
-    wear(INSTANT),
+    wear('instantskin'),
     w(1200),
     s('{shine}My word! {pause}{happy}Splendid!'),
     p('Why does she talk like that.'),
@@ -164,7 +165,7 @@
     p('Recycled. Probably.'),
     c('Only the look, Snappy. Nobody throws you anywhere.'),
     run('snappy.model = "disposable"'),
-    wear(DISPOSABLE),
+    wear('disposableskin'),
     w(1200),
     s('{worried}*zzzt-click* {pause}...Why do I make that noise.'),
     c('You wind the film after every picture.'),
@@ -217,7 +218,7 @@
     p('Thank you.'),
     c('It was not entirely a compliment.'),
     run('snappy.graphics = "low"'),
-    wear(PIXEL),
+    wear('pixelskin'),
     w(1200),
     s('{shock}...WHAT HAPPENED TO ME!'),
     c('Eight bits. Like the old consoles.'),
@@ -294,7 +295,7 @@
     w(800),
     p('It is gone.'),
     c('Mostly.'),
-    wear(LAG),
+    wear('lagskin'),
     w(1400),
     s('{shock}W-w-what... {pause}{worried}why do I l-l-look like this?'),
     c('It left something behind. Cosmetic only. Your frames are fine.'),
@@ -348,7 +349,7 @@
     p('{wide}Claude.'),
     c('She will be fine. It is mostly a cursor.'),
     run('snappy.render("terminal")'),
-    wear(CLAUDE),
+    wear('claudeskin'),
     w(1300),
     s('{shock}...I AM A WINDOW.'),
     c('Try talking.'),

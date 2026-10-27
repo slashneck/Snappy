@@ -25,6 +25,14 @@ public sealed class TrayApp : ApplicationContext
     private bool _overlayForCurrentClip, _shinyForCurrentClip;
     private UpdateService? _updates;
 
+    // 1.6.0 and 1.6.1: the same release, the second one only fixing things
+    private static bool SameRelease(string? a, string b)
+    {
+        if (a == null) return false;
+        string[] x = a.Split('.'), y = b.Split('.');
+        return x.Length >= 2 && y.Length >= 2 && x[0] == y[0] && x[1] == y[1];
+    }
+
     public TrayApp(bool background)
     {
         _ui = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
@@ -34,8 +42,9 @@ public sealed class TrayApp : ApplicationContext
         string version = Application.ProductVersion.Split('+')[0];
         if (existed && settings.LastSeenVersion == null) settings.EarlyBird = true;
         bool newVersion = settings.LastSeenVersion != version;
-        // someone who updated (not a fresh install) gets to see what changed
-        if (existed && newVersion) settings.WhatsNewFor = version;
+        // someone who updated (not a fresh install) gets to see what changed. A fix-up release (only the last number
+        // changed) shares its notes with the release before it, so it leaves alone whether those are still to be heard.
+        if (existed && newVersion && !SameRelease(settings.LastSeenVersion, version)) settings.WhatsNewFor = version;
         settings.LastSeenVersion = version;
         if (!existed || migrated || newVersion) settings.Save();
         // Keeps the startup entry pointing at this exe, e.g. after Snappy was moved or updated.

@@ -430,7 +430,7 @@
     // seen through to the end: whatever it leaves behind stays for the rest of the day, and so does her outfit from it
     if (finished && aftermaths.has(id)) takeOver(id);
     const fit = finished && [...outfits.values()].find((o) => !o.day && o.today !== false && [o.from].flat().includes(id));
-    if (fit) store.set('snappy.outfit.today', JSON.stringify({ id: fit.id, until: midnight() }));
+    if (fit) store.set('snappy.outfit.today', JSON.stringify({ id: fit.id, until: midnight(), at: Date.now() }));
     // whatever she walked home in: kept if it's today's outfit, swapped (or taken off) if not
     wear(true);
     mark();
@@ -450,12 +450,13 @@
   // from: the event (or events) that unlock it
   const owned = (o) => !o.from || [o.from].flat().some(has);
   // what she wore in today's event, which she keeps on until midnight (unless something's picked in Settings)
-  function today() {
+  function todayEntry() {
     try {
       const t = JSON.parse(store.get('snappy.outfit.today') || 'null');
-      return t && Date.now() < t.until ? outfits.get(t.id) || null : null;
+      return t && Date.now() < t.until && outfits.get(t.id) ? t : null;
     } catch { return null; }
   }
+  const today = () => { const t = todayEntry(); return t ? outfits.get(t.id) : null; };
   const slot = () => document.getElementById('mascot');
   // the swap switch, flipped: until midnight she wears the Program's skin, whatever else is picked. Snappy coming back
   // for a tour switches it off (and keeps a picked skin off for the rest of the session).
@@ -465,9 +466,13 @@
     if (current || !slot()?.querySelector('.m-talk')) return;
     const picked = outfits.get(state.settings?.mascotOutfit);
     const flipped = swapped() && outfits.get('programskin');
-    // ('none' picked: just her, even on a special day or after an event)
+    // ('none' picked: just her, even on a special day)
     const plain = state.settings?.mascotOutfit === 'none';
-    const o = flipped || (plain ? null : picked && owned(picked) && !(skinOff && picked.skin) ? picked : today() || [...outfits.values()].find((x) => x.day?.()) || null);
+    // whatever happened last wins: what a story left her in (until midnight) over a pick made before it, whatever the
+    // pick was, and a pick made after it over that
+    const t = todayEntry();
+    const fresh = t && (t.at || 0) > Number(store.get('snappy.outfit.pickedAt') || 0) ? outfits.get(t.id) : null;
+    const o = flipped || fresh || (plain ? null : picked && owned(picked) && !(skinOff && picked.skin) ? picked : today() || [...outfits.values()].find((x) => x.day?.()) || null);
     // (the pop-up hears about it once at the start, too, in case it's still wearing something from before)
     if (popupKey === null) dressPopup(o, o === picked ? 0 : midnight());
     const changed = (o?.id || null) !== wearing;
@@ -524,11 +529,15 @@
   }
   // an event that ends with her walking home in something: the corner copy takes it over as it is (no popping off and
   // on again), and keeps it if it's what she'd wear anyway
-  function wearNow(id) {
-    const o = outfits.get(id);
-    if (!o) return;
-    Mascot.dress(slot(), o.markup, true);
-    wearing = id;
+  // (in the middle of a story too: whatever it is, she takes on its voice, bubble and way of talking right away; null
+  // takes it off again; pop: it goes on the way an outfit usually does, instead of already being on)
+  function wearNow(id, { pop = false } = {}) {
+    const o = id ? outfits.get(id) : null;
+    if (id && !o) return;
+    Mascot.dress(slot(), o?.markup || null, !pop);
+    wearing = o?.id || null;
+    Speech.accent = o?.accent || null;
+    document.documentElement.classList.toggle('skin-program', o?.skin === 'program');
   }
   // on the morning of a special day, or after a change in Settings
   setInterval(wear, 2000);
@@ -838,7 +847,9 @@
     replay,
     wear, wearNow, dressCopy,
     // something she was given outside an event (in the terminal, say): she keeps it on until midnight, like a story's
-    keepOn(id) { if (outfits.has(id)) store.set('snappy.outfit.today', JSON.stringify({ id, until: midnight() })); },
+    keepOn(id) { if (outfits.has(id)) store.set('snappy.outfit.today', JSON.stringify({ id, until: midnight(), at: Date.now() })); },
+    // someone picked what she wears (the wardrobe): from now on that wins over what a story put on her earlier today
+    pickedNow() { store.set('snappy.outfit.pickedAt', String(Date.now())); },
     // what she is underneath the outfit: null for herself, or e.g. 'program' (her voice and small talk change too)
     get skin() { return outfits.get(wearing)?.skin || null; },
     // how she sounds in what she's wearing, when it changes that (cat ears, say)

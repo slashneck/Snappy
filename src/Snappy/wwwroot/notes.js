@@ -432,9 +432,13 @@
     if (state.settings?.whatsNewFor) await saveSettings((s) => { s.whatsNewFor = null; });
   }
 
+  // the notes for a version: its own, or for a fix-up release (only the last number changed), the ones it shares
+  const entry = (v) => (NOTES[v] ? v : v && NOTES[v.replace(/\.\d+$/, '.0')] ? v.replace(/\.\d+$/, '.0') : null);
+
   async function show(version = state.version) {
-    if (!NOTES[version]) return;
-    if (version === state.version) seen();
+    version = entry(version);
+    if (!version) return;
+    if (version === entry(state.version)) seen();
     if (Speech.enabled) {
       reading = version;
       try { await Events.play('patchnotes'); } finally { reading = null; }
@@ -444,10 +448,10 @@
   Events.define('patchnotes', { system: true, title: 'Patch notes', run: read });
 
   window.Notes = {
-    has: (version) => !!NOTES[version],
+    has: (version) => !!entry(version),
     // every version with notes, newest first
     versions: () => Object.keys(NOTES).sort((a, b) => b.localeCompare(a, undefined, { numeric: true })),
-    due: () => !!NOTES[state.version] && state.settings?.whatsNewFor === state.version,
+    due: () => !!entry(state.version) && !!state.settings?.whatsNewFor && entry(state.settings.whatsNewFor) === entry(state.version),
     show,
   };
 })();

@@ -178,16 +178,22 @@
   async function wear(id) {
     if (busy || !her) return;
     busy = true;
-    sparks();
-    body.classList.remove('wr-twirl');
-    void body.offsetWidth;
-    body.classList.add('wr-twirl');
-    await wait(270);
-    Mascot.dress(her, id === 'none' ? null : Events.markup(id), true);
-    await saveSettings((s) => { s.mascotOutfit = id; });
-    await wait(350);
-    body.classList.remove('wr-twirl');
-    busy = false;
+    const b = body;
+    try {
+      sparks();
+      b.classList.remove('wr-twirl');
+      void b.offsetWidth;
+      b.classList.add('wr-twirl');
+      await wait(270);
+      if (her) Mascot.dress(her, id === 'none' ? null : Events.markup(id), true);
+      Events.pickedNow();
+      await saveSettings((s) => { s.mascotOutfit = id; });
+      await wait(350);
+    } finally {
+      b.classList.remove('wr-twirl');
+      busy = false;
+    }
+    if (!open) return;
     if (tab === 'outfits') panel(true);
     caption();
     Talk.settingChanged('mascotOutfit', id === 'none' ? '' : id);
@@ -279,6 +285,7 @@
     if (t) tab = t;
     if (!ready()) return;
     open = true;
+    busy = false;
     back = ['library', 'settings', 'studio'].includes(state.view) ? state.view : 'library';
     hideMenu();
     stopPreview();

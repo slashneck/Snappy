@@ -1331,7 +1331,7 @@ void main() {
     out('rendering 34 faces, a turntable and four pop-ups...', 'dim'),
     w(1100),
     out('done. no hair anywhere.', 'ok'),
-    fx(({ tune }) => { Mascot.dress(document.getElementById('mascot'), Events.markup('skin3d')); tune('glitch', 0.4); }),
+    fx(({ tune }) => { Events.wearNow('skin3d', { pop: true }); tune('glitch', 0.4); }),
     w(1200),
     s('{joy}I HAVE SIDES NOW.'),
     p('And a back. With a screen on it.'),
