@@ -107,6 +107,8 @@ html.cursor-taken .event-skip { opacity: .55; }
 .program-eye::before { content: ""; position: absolute; z-index: 1; left: 0; top: 0; width: 100%; height: 23px; clip-path: circle(20px at 50% 20px);
   background: linear-gradient(#1a2b34, #0f1b21); box-shadow: inset 0 -2px 0 rgba(110, 215, 255, .45); transform-origin: 50% 0; scale: 1 0; transition: scale .3s var(--spring); }
 .program.annoyed .program-eye::before { scale: 1 1; }
+/* a yawn caught from Snappy: the lid drifts most of the way down, slowly */
+.program.pg-tired .program-eye::before { scale: 1 1.3; transition: scale .8s ease-in-out; }
 .program.annoyed .program-eye i { translate: var(--px, 0) 2px; }
 .program.wide .program-eye i { scale: 1.3; }
 @keyframes program-glow { 50% { box-shadow: 0 0 20px 7px rgba(110, 215, 255, .6); } }
@@ -1400,6 +1402,8 @@ html.cursor-taken .event-skip { opacity: .55; }
 .pn-ring { position: fixed; z-index: 96; width: 40px; height: 40px; translate: -50% -50%; border: 3px solid #7fdc6c; border-radius: 12px; pointer-events: none;
   box-shadow: 0 0 18px #7fdc6c; animation: pn-ring 1.2s ease-out forwards; }
 @keyframes pn-ring { from { scale: .6; opacity: 1; } to { scale: 1.9; opacity: 0; } }
+.pn-ring.pn-name { border-color: #b48cff; box-shadow: 0 0 18px #b48cff; animation-name: pn-ring-name; }
+@keyframes pn-ring-name { from { scale: .9; opacity: 1; } to { scale: 1.35; opacity: 0; } }
 /* a tumbleweed rolling right to left along the bottom: across, a little hop, and its own spin */
 .pn-weed { position: fixed; z-index: 96; left: 0; bottom: 12%; width: 70px; height: 70px; pointer-events: none; translate: calc(100vw + 40px) 0; }
 .pn-weed.go { animation: pn-weed 3.4s linear forwards; }
@@ -2049,6 +2053,8 @@ html.rw-tape .app { animation: rw-wobble .16s steps(2) infinite; filter: saturat
 .brand-name { transition: opacity .22s ease, translate .22s ease, filter .22s ease; }
 .brand-name.af-swap { opacity: 0; translate: 0 -4px; filter: blur(2px); }
 .brand-name.renamed { font-size: 15px; line-height: 1.12; }
+/* Sloppy: her name in the font nobody chooses on purpose, full size, and a little crooked */
+html.af-sloppy .brand-name, html.af-sloppy .brand-name.renamed { font-family: "Comic Sans MS", "Segoe Print", cursive; font-size: 19px; color: #d8e27a; rotate: -3deg; }
 /* tags under her name */
 .af-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
 .af-tag { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; border-radius: 6px; background: var(--line); color: var(--text-2); font: 650 10.5px/1.55 var(--font);
@@ -2117,7 +2123,10 @@ html.rw-tape .app { animation: rw-wobble .16s steps(2) infinite; filter: saturat
 @keyframes af-float { 50% { translate: 0 -2px; rotate: -1.4deg; } }
 @media (prefers-reduced-motion: reduce) { .af-float .brand-name, .af-float .af-tags, .af-sparkle.in, .af-shine::before { animation: none; } }
 /* the small print under the name, in her own handwriting more or less */
-.af-tag.byline { padding: 0 1px; border-radius: 0; background: none; color: var(--text-3); font: italic 500 10.5px/1.3 var(--font); }
+.af-tag.byline { padding: 0 1px; border-radius: 0; background: none; color: var(--text-3); font: italic 500 10.5px/1.3 var(--font); white-space: normal; }
+/* (a tag never runs under the arcade's button: the name column takes the room there is and wraps in it) */
+.brand-text { flex: 1 1 auto; }
+.af-tags { max-width: 100%; }
 /* the scream button, shrunk down into the corner: the one mark that takes a click */
 .af-mark.af-scream { position: fixed; right: 18px; bottom: 18px; z-index: 65; pointer-events: auto; scale: .6; }
 .af-mark.af-scream.in { scale: 1; }
@@ -2141,6 +2150,44 @@ html.rw-tape .app { animation: rw-wobble .16s steps(2) infinite; filter: saturat
 .sw-tiny.bob .pg-iris, .mascot.talking .pg-iris { animation: pg-pulse .3s ease-out; }
 .mascot.talking .pg-iris { animation: pg-pulse .55s ease-in-out infinite alternate; }
 @keyframes pg-pulse { 50% { transform: scale(1.18); filter: drop-shadow(0 0 7px #9fefff); } }
+/* In her place the Program does every moment its own way, and none of her flash, sparkles, sweat or z's show through */
+.mascot:has(.pg-skin) :is(.m-flash, .m-sparkle, .m-pop, .m-z, .m-sweat, .m-scissors) { display: none; }
+.pg-skin :is(.pg-buffer, .pg-smile, .pg-ring, .pg-scan) { opacity: 0; }
+.pg-skin .pg-ring { transform-box: fill-box; transform-origin: center; }
+.pg-skin .pg-buffer { transform-box: view-box; transform-origin: 100px 118px; }
+.pg-skin :is(.pg-look, .pg-dot) { transform-box: view-box; transform-origin: 100px 118px; }
+/* saving a clip: the lid snaps shut like a shutter, a ring of light leaves the eye, a scan line runs down its body, and
+   then the eye buffers until the clip is saved */
+[data-mood="clipping"] .pg-skin .pg-lid { animation: pg-shutter .9s both; }
+[data-mood="clipping"] .pg-skin .pg-ring { animation: pg-ring .7s .18s ease-out both; }
+[data-mood="clipping"] .pg-skin .pg-scan { animation: pg-scan .75s .22s ease-in-out both; }
+/* buffering, in a loop: the eye shrinks to a dot, the dot splits into three that spiral out and go round, they come
+   back together, and the dot grows back into the eye (one loop per turn, 1.2 s, the length of the pop-up's strip) */
+[data-mood="clipping"] .pg-skin .pg-look { animation: pg-merge 1.2s .95s ease-in-out infinite both; }
+[data-mood="clipping"] .pg-skin .pg-buffer { opacity: 1; animation: pg-spin 1.2s .95s linear infinite; }
+[data-mood="clipping"] .pg-skin .pg-dot { animation: pg-split 1.2s .95s ease-in-out infinite both; }
+:is([data-mood="working"], [data-mood="starting"], [data-mood="trimming"]) .pg-skin .pg-look { animation: pg-merge 1.2s ease-in-out infinite both; }
+:is([data-mood="working"], [data-mood="starting"], [data-mood="trimming"]) .pg-skin .pg-buffer { opacity: 1; animation: pg-spin 1.2s linear infinite; }
+:is([data-mood="working"], [data-mood="starting"], [data-mood="trimming"]) .pg-skin .pg-dot { animation: pg-split 1.2s ease-in-out infinite both; }
+@keyframes pg-merge { 0% { opacity: 1; transform: scale(1); } 14% { opacity: 1; transform: scale(.36); } 17%, 83% { opacity: 0; transform: scale(.36); }
+  86% { opacity: 1; transform: scale(.36); } 100% { opacity: 1; transform: scale(1); } }
+@keyframes pg-split { 0%, 14% { opacity: 0; transform: rotate(var(--a)) translateY(0); } 16% { opacity: 1; transform: rotate(var(--a)) translateY(0); }
+  32%, 68% { opacity: 1; transform: rotate(var(--a)) translateY(-13px); } 84% { opacity: 1; transform: rotate(var(--a)) translateY(0); }
+  87%, 100% { opacity: 0; transform: rotate(var(--a)) translateY(0); } }
+/* saved: a pleased squint. Failed: red. Recording: its own light. Paused: the eye shut */
+[data-mood="happy"] .pg-skin .pg-look { animation: pg-blink-out 1.15s both; }
+[data-mood="happy"] .pg-skin .pg-smile { animation: pg-blink-in 1.15s both; }
+[data-mood="error"] .pg-skin .pg-iris { fill: #ff6b6b; filter: drop-shadow(0 0 5px #ff4040); }
+[data-mood="recording"] .pg-skin .pg-rec { fill: #ff3b30; animation: m-rec 1.6s ease-in-out infinite; }
+[data-mood="paused"] .pg-skin .pg-lid { animation: none; transform: scaleY(1); }
+@keyframes pg-shutter { 0% { transform: scaleY(0); } 12%, 24% { transform: scaleY(1); } 42%, 100% { transform: scaleY(0); } }
+@keyframes pg-ring { from { opacity: .95; transform: scale(.7); } to { opacity: 0; transform: scale(1.9); } }
+@keyframes pg-scan { 0% { opacity: 0; transform: translateY(0); } 12%, 85% { opacity: .9; } 100% { opacity: 0; transform: translateY(132px); } }
+@keyframes pg-on { to { opacity: 1; } }
+@keyframes pg-off { to { opacity: 0; } }
+@keyframes pg-spin { to { transform: rotate(360deg); } }
+@keyframes pg-blink-out { 0%, 8% { opacity: 1; } 12%, 88% { opacity: 0; } 100% { opacity: 1; } }
+@keyframes pg-blink-in { 0%, 8% { opacity: 0; } 12%, 88% { opacity: 1; } 100% { opacity: 0; } }
 /* swapping in or out of it: a quick glitch on her corner */
 .mascot-slot.pg-swapping { animation: pg-glitch .45s steps(3) 1; }
 @keyframes pg-glitch { 0% { filter: hue-rotate(0deg); translate: 0 0; } 33% { filter: hue-rotate(160deg) contrast(1.6); translate: -2px 1px; } 66% { filter: invert(.8); translate: 2px -1px; } 100% { filter: none; translate: 0 0; } }
@@ -2235,9 +2282,11 @@ html.rw-tape .app { animation: rw-wobble .16s steps(2) infinite; filter: saturat
 .af-bomb::after { content: ""; position: absolute; right: -2px; top: -5px; width: 5px; height: 5px; border-radius: 50%; background: rgba(200, 200, 200, .6); animation: af-smoke 2.6s ease-out infinite; }
 @keyframes af-smoke { 0% { translate: 0 0; scale: .4; opacity: 0; } 20% { opacity: .8; } 100% { translate: 3px -9px; scale: 1.6; opacity: 0; } }
 /* Snappy Is You: the rule, still standing, next to the title */
-.af-rule { left: calc(100% + 16px); top: 7px; display: flex; gap: 2px; translate: 0 -6px; }
-.af-rule.in { translate: 0 0; }
-.af-rule span { padding: 3px 4px 2px; background: #0e0e10; color: #e05aa0; font: 900 9px/1 var(--font-display); letter-spacing: .08em; box-shadow: 0 0 0 1px #2a2a30; }
+/* SNAPPY IS YOU, as her logo: the rule's three word blocks in place of her name */
+html.af-isyou .brand-name { position: relative; color: transparent; }
+.af-rule { left: 0; top: 50%; display: flex; gap: 2px; translate: 0 -50%; scale: .85; transform-origin: 0 50%; white-space: nowrap; }
+.af-rule.in { scale: 1; }
+.af-rule span { padding: 3px 3px 2px; background: #0e0e10; color: #e05aa0; font: 900 9px/1 var(--font-display); letter-spacing: .04em; box-shadow: 0 0 0 1.5px #2a2a30; }
 .af-rule span:nth-child(2) { color: #f4f4f4; }
 .af-rule span:nth-child(3) { color: #e8d23f; }
 .af-rule.in span { animation: af-wobble 1.2s steps(2) infinite; }
@@ -2293,6 +2342,10 @@ html.rw-tape .app { animation: rw-wobble .16s steps(2) infinite; filter: saturat
 .term-line.log-program { color: #9fdcff; }
 .term-line.log-program::before { content: "program › "; color: rgba(159, 220, 255, .5); }
 .term-line.steve { color: #8ea6ff; }
+.term-action { display: block; margin: 6px 0 8px; padding: 6px 12px; border: 1px solid rgba(232, 156, 112, .55); border-radius: 7px; background: rgba(232, 156, 112, .1);
+  color: #f0b894; font: inherit; cursor: pointer; animation: cl-line-in .2s ease-out both; }
+.term-action:hover { background: rgba(232, 156, 112, .22); color: #ffd7bd; }
+.term-action:disabled { opacity: .55; cursor: default; }
 .term-line.cmd .term-who { color: #e3a07a; }
 .term-line.cmd.by-snappy { color: #fff; }
 .term-line.cmd.by-snappy .term-who { color: rgba(255, 255, 255, .6); }
@@ -2325,10 +2378,54 @@ html.rw-tape .app { animation: rw-wobble .16s steps(2) infinite; filter: saturat
 /* the mouth she had once: it never stops chewing */
 .mascot .cg-mouth { transform-box: fill-box; transform-origin: 50% 50%; animation: cg-chew .26s ease-in-out infinite alternate; }
 @keyframes cg-chew { to { transform: scale(.8, .35); } }
-.mascot .cg-ears { transform-box: fill-box; transform-origin: 50% 100%; animation: cg-twitch 3.4s ease-in-out infinite; }
-@keyframes cg-twitch { 0%, 88%, 100% { transform: none; } 92% { transform: rotate(-4deg); } 96% { transform: rotate(3deg); } }
-@media (prefers-reduced-motion: reduce) { .mascot .cg-mouth, .mascot .cg-ears { animation: none; } }
+/* the cat mouth: one shape per expression, and the open one on every word she says */
+.mascot .cg-m { opacity: 0; }
+.mascot .cg-base { opacity: 1; }
+.mascot:is([data-eyes="happy"], [data-eyes="joy"], [data-eyes="heart"], [data-eyes="ew"], [data-eyes="shock"], [data-eyes="angry"], [data-eyes="sad"]) .cg-base { opacity: 0; }
+.mascot:is([data-eyes="happy"], [data-eyes="joy"], [data-eyes="heart"], [data-eyes="ew"]) .cg-blep { opacity: 1; }
+.mascot[data-eyes="shock"] .cg-o { opacity: 1; }
+.mascot:is([data-eyes="angry"], [data-eyes="sad"]) .cg-pout { opacity: 1; }
+.mascot.hop .cg-set { animation: cg-say .3s both; }
+.mascot.hop .cg-open { animation: cg-say-open .3s both; }
+@keyframes cg-say { 15%, 75% { opacity: 0; } }
+@keyframes cg-say-open { 0%, 100% { opacity: 0; } 15%, 75% { opacity: 1; } }
+/* the cat ears: a twitch now and then, up when she's shocked, drooping when she's sad, flat back when she's cross */
+.mascot .cg-ear { transform-box: fill-box; transform-origin: 50% 100%; transition: transform .3s var(--spring, ease); animation: cg-twitch 3.4s ease-in-out infinite; }
+.mascot .cg-ear.r { animation-delay: -1.7s; }
+.mascot[data-eyes="shock"] .cg-ear { animation: none; transform: scaleY(1.15); }
+.mascot[data-eyes="sad"] .cg-ear.l { animation: none; transform: rotate(-32deg); }
+.mascot[data-eyes="sad"] .cg-ear.r { animation: none; transform: rotate(32deg); }
+.mascot[data-eyes="angry"] .cg-ear.l { animation: none; transform: rotate(-50deg) scaleY(.8); }
+.mascot[data-eyes="angry"] .cg-ear.r { animation: none; transform: rotate(50deg) scaleY(.8); }
+@keyframes cg-twitch { 0%, 88%, 100% { transform: none; } 92% { transform: rotate(-6deg); } 96% { transform: rotate(4deg); } }
+/* her halo floats a little above her */
+.mascot .cg-halo { animation: cg-halo 2.6s ease-in-out infinite; }
+@keyframes cg-halo { 50% { translate: 0 -3px; } }
+@media (prefers-reduced-motion: reduce) { .mascot .cg-mouth, .mascot .cg-ear, .mascot .cg-halo, .mascot.hop .cg-set { animation: none; } .mascot.hop .cg-open { animation: none; } }
 /* the Program confiscates the terminal button */
 .term-btn.locked span { opacity: .7; }
 .term-btn.taken { animation: term-taken .7s cubic-bezier(.5, -0.4, .8, .4) forwards; pointer-events: none; }
 @keyframes term-taken { 30% { translate: 0 2px; scale: 1.1; } 100% { translate: 40px -60px; scale: 0; rotate: 120deg; opacity: 0; } }
+
+/* ---------- the disguise (chats.js): a mustache that talks, brows that give her away, and a disguise that slips ---------- */
+.mascot :is(.dg-stache, .dg-nose, .dg-glasses, .dg-brows) { transform-box: fill-box; transform-origin: 50% 50%; }
+.mascot.talking .dg-stache { animation: dg-talk .22s ease-in-out infinite alternate; }
+@keyframes dg-talk { to { transform: translateY(3px) scaleY(.82); } }
+.mascot:is([data-eyes="shock"], [data-eyes="joy"]) .dg-brows { transform: translateY(-9px); }
+.mascot:is([data-eyes="angry"], [data-eyes="flat"]) .dg-brows { transform: translateY(5px); }
+/* saving a clip: the flash knocks the whole disguise down her face, she shoves it back up, and the mustache settles crooked */
+.mascot[data-mood="clipping"] :is(.dg-glasses, .dg-nose, .dg-stache) { animation: dg-slip .9s cubic-bezier(.3, .6, .3, 1) both; }
+.mascot[data-mood="clipping"] .dg-brows { animation: dg-brows .9s ease both; }
+@keyframes dg-slip { 0%, 12% { transform: none; } 28% { transform: translateY(22px) rotate(-8deg); } 46% { transform: translateY(26px) rotate(-10deg); }
+  60% { transform: translateY(-4px) rotate(3deg); } 74%, 100% { transform: rotate(-3deg); } }
+@keyframes dg-brows { 0%, 12% { transform: none; } 30%, 50% { transform: translateY(-12px); } 70%, 100% { transform: none; } }
+/* saved: a proud twirl of the mustache */
+.mascot[data-mood="happy"] .dg-stache { animation: dg-twirl .5s ease-in-out 2 alternate; }
+@keyframes dg-twirl { from { transform: rotate(-9deg); } to { transform: rotate(9deg) scale(1.06); } }
+/* it didn't work: the nose drops off and bounces back on */
+.mascot[data-mood="error"] .dg-nose { animation: dg-drop 1.2s cubic-bezier(.4, 0, .3, 1) both; }
+@keyframes dg-drop { 0% { transform: none; } 30% { transform: translateY(48px) rotate(30deg); } 45% { transform: translateY(40px) rotate(24deg); } 75% { transform: translateY(-6px); } 100% { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .mascot .dg-stache, .mascot .dg-nose, .mascot .dg-glasses, .mascot .dg-brows { animation: none !important; } }
+
+/* sunglasses (program2.js) and the future look's aviators (future.js): her eyes stay hidden behind them, nothing peeking out */
+.mascot:has(.sg-shades) .m-eye { visibility: hidden; }

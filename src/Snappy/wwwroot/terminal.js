@@ -150,6 +150,17 @@
       if (gap) await wait(gap);
     }
   }
+  // a button for the person typing, in among the lines (it stays when the conversation is over)
+  function action(label, onClick) {
+    if (!out) return null;
+    const b = document.createElement('button');
+    b.className = 'term-action';
+    b.textContent = label;
+    b.addEventListener('click', () => { Speech.tune('key', 0.45); onClick(b); });
+    out.appendChild(b);
+    out.scrollTop = out.scrollHeight;
+    return b;
+  }
   // the terminal lights up while Claude talks, a little flash for every word
   const pulse = () => { if (!panel) return; panel.classList.remove('word'); void panel.offsetWidth; panel.classList.add('word'); };
   const glow = (on) => panel?.classList.toggle('speaking', on);
@@ -180,7 +191,7 @@
     sceneCtx = ctx;
     ctx.onEnd(() => { sceneCtx = null; glow(false); stir(BETWEEN); Mascot.gaze(her(), null); Mascot.face(null); });
     // (it's her conversation too: if the Program is the camera right now, she comes back for it)
-    if (Events.skin) { Events.unswap(); await ctx.wait(900); }
+    if (Events.skin === 'program') { Events.unswap(); await ctx.wait(900); }
     const prog = Program.program(ctx);
     const top = { center: { x: innerWidth / 2 }, y: 64, size: 0 };
     const env = {
@@ -192,6 +203,7 @@
       leave: () => close(true),
       // and wipes the screen, like Ctrl+L
       clear: () => { if (out) out.textContent = ''; },
+      button: (label, onClick) => action(label, onClick),
     };
     for (const [kind, x, o = {}] of beats) {
       ctx.check();
@@ -263,7 +275,7 @@
     await ctx.wait(350);
   }
   // registers a conversation under its words (all of them hidden); beats can also be a function that picks them
-  function chat(words, beats) { cmd(words, '', () => converse(beats), { hidden: true }); }
+  function chat(words, beats, { when = null } = {}) { cmd(words, '', () => converse(beats), { hidden: true, when }); }
   async function converse(beats) {
     if (Events.running) { await say(['(they are busy right now)', 'dim']); return; }
     await say(['(Esc skips)', 'dim']);
@@ -318,8 +330,9 @@
   // The commands
   // ---------------------------------------------------------------------------
   const COMMANDS = new Map(), LISTED = [], GROUPS = {};
-  function cmd(names, help, fn, { group = 'fun', hidden = false } = {}) {
-    for (const n of [names].flat()) COMMANDS.set(n, { fn, hidden, name: [names].flat()[0] });
+  // when: some commands only exist once something has happened (until then they're not found, and not hinted at)
+  function cmd(names, help, fn, { group = 'fun', hidden = false, when = null } = {}) {
+    for (const n of [names].flat()) COMMANDS.set(n, { fn, hidden, when, name: [names].flat()[0] });
     if (!hidden) { LISTED.push([names].flat()[0]); (GROUPS[group] ||= []).push([[names].flat()[0], help]); }
   }
   // hidden ones count when found
@@ -350,7 +363,7 @@
         }
       }
       if (!hit && low.startsWith('sudo ')) hit = COMMANDS.get('sudo');
-      if (!hit) { await unknown(text); return; }
+      if (!hit || (hit.when && !hit.when())) { await unknown(text); return; }
       misses = 0;
       if (hit.hidden) discover(hit.name);
       await hit.fn(args, text);
@@ -404,7 +417,8 @@
   cmd('hint', 'a nudge toward something hidden', () => {
     const hidden = new Set([...[...COMMANDS.values()].filter((c) => c.hidden).map((c) => c.name), ...EXTRA]);
     const missing = [...hidden].filter((n) => !found.has(n));
-    const left = missing.filter((n) => HINTS.has(n));
+    const there = (n) => { const c = [...COMMANDS.values()].find((x) => x.name === n); return !c?.when || c.when(); };
+    const left = missing.filter((n) => HINTS.has(n) && there(n));
     if (!left.length) return say(['You have found everything there is to find.', 'secret'], ['The Program is impressed. Against its will.', 'dim']);
     lastHint = pick(left.length > 1 ? left.filter((n) => n !== lastHint) : left);
     return say([`hint: ${HINTS.get(lastHint)}`, 'dim'], [`(${missing.length} still hidden)`, 'dim']);
@@ -495,7 +509,7 @@
   cmd(['feed', 'cookie'], 'give her a cookie', async () => { await print(['   _____', '  / o  o \\', ' |  o  o  |', '  \\_o___o/'].map((l) => [l, 'art'])); she(pick(['{joy}COOKIE!', '{love}You remembered.', '{shine}Om nom. {pause}{wink}For the record, cameras can eat cookies.'])); }, { group: 'snappy' });
   cmd('dance', 'she dances', async () => { await say(['♪ ┏(・o･)┛ ♪ ┗( ･o･)┓ ♪', 'art']); Mascot.hop(); setTimeout(() => Mascot.hop(), 300); setTimeout(() => Mascot.hop(), 600); she('{joy}Look at me GO!'); }, { group: 'snappy' });
   cmd(['hello', 'hi', 'hey'], 'say hello', () => { she(pick(['{shine}Hi! {pause}You found the terminal!', '{happy}Hello! {pause}Typing at me now?', '{wink}Hey there, hacker.'])); return say(['hello!', 'ok']); }, { group: 'snappy' });
-  cmd('outfits', 'what she can wear', () => { const o = Events.outfits; return o.length ? say(['Outfits she has:', ''], ...o.map((x) => [`  ${x.name}`, 'ok']), ['Pick one in Settings, Snappy, Outfit.', 'dim']) : say(['None yet. Outfits come from stories.', 'dim']); }, { group: 'snappy' });
+  cmd('outfits', 'what she can wear', () => { const o = Events.outfits; return o.length ? say(['Outfits she has:', ''], ...o.map((x) => [`  ${x.name}`, 'ok']), ['Pick one in her wardrobe: click her name.', 'dim']) : say(['None yet. Outfits come from stories.', 'dim']); }, { group: 'snappy' });
   cmd(['switch', 'swap'], 'swap her with the Program', async () => {
     if (!Events.has('swap')) { await say(['swap: permission denied', 'err'], ['(a story has to happen first)', 'dim']); program('Absolutely not.'); return; }
     Events.swapped = !Events.swapped;
@@ -506,7 +520,7 @@
   }, { group: 'snappy' });
   cmd('aftermath', 'what today left behind', () => {
     const on = Events.aftermaths.filter((m) => Events.lasting(m.id));
-    return on.length ? say(...on.map((m) => [`today: ${m.label}`, 'ok']), ['It goes at midnight. Keep one in Settings, Snappy, Aftermath.', 'dim']) : say(['Nothing today.', 'dim']);
+    return on.length ? say(...on.map((m) => [`today: ${m.label}`, 'ok']), ['It goes at midnight. Keep one in her wardrobe: click her name.', 'dim']) : say(['Nothing today.', 'dim']);
   }, { group: 'snappy' });
   cmd('program', 'call the Program', async () => { await say(['paging the Program...', 'dim']); program(pick([['I am here.', 'I am always here.'], ['Yes?'], ['You rang.', 'I do not ring. Figure of speech.'], ['Hello. Please do not make this weird.']])); }, { group: 'snappy' });
   cmd('claude', 'say hi to Claude', () => say([pick(['Hi. I wrote most of this terminal.', 'Hello. Be nice to the Program, it tries very hard.', 'I am not really here right now. This is a message I left.', 'Hi! If Snappy asks for root access: no.']), 'claude']), { group: 'snappy' });
@@ -636,5 +650,5 @@
   cmd(['thank you', 'thanks', 'ty'], '', () => { she('{love}Aww. {pause}You\'re welcome!'); return say(['you\'re welcome :)', 'ok']); }, H);
 
   // nothing starts on its own while you're typing, and the >_ key stays out of the way of games and stories
-  window.Terminal = { open: false, show: open, close, refresh: refreshButton, found: () => taken() || unlocked(), chat, hints };
+  window.Terminal = { open: false, show: open, close, refresh: refreshButton, found: () => taken() || unlocked(), chat, hints, cmd, print, button: action };
 })();

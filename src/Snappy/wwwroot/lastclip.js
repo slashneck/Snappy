@@ -13,7 +13,7 @@
     <circle cx="152" cy="37" r="8" fill="#fff6c8" stroke="#0a0a0a" stroke-width="4"/>`;
   // the little clip, held at her side (an outfit, so it's drawn in her coordinates; tucked in close, so in her corner
   // he doesn't cover what's written next to her)
-  const LITTLE = `<g class="lc-little"><g transform="translate(160 124) scale(.8) translate(-176 -118)"><rect x="176" y="118" width="58" height="38" rx="7" fill="#c9ecff" stroke="#0a0a0a" stroke-width="5"/>
+  const LITTLE = `<g class="lc-little"><g transform="translate(168 122) scale(1.1) translate(-176 -118)"><rect x="176" y="118" width="58" height="38" rx="7" fill="#c9ecff" stroke="#0a0a0a" stroke-width="5"/>
     <path d="M178.5 142 Q196 130 214 142 T231.5 140 V151 Q231.5 153.5 229 153.5 H181 Q178.5 153.5 178.5 151 Z" fill="#7fcf7a"/>
     <circle cx="222" cy="128" r="4.5" fill="#ffd84a"/>
     <rect class="lc-little-eye" x="195" y="129" width="4.5" height="8" rx="2.2" fill="#0a0a0a"/><rect class="lc-little-eye" x="210" y="129" width="4.5" height="8" rx="2.2" fill="#0a0a0a"/></g></g>`;
@@ -814,7 +814,7 @@
   Events.define('lastclip', {
     tier: 'rare', title: 'The Last Clip', hint: 'A clip nobody ever opened. Somebody should.', run: lastClip, weight: 2,
   });
-  // After the story he's at her side until midnight; after that he's hers to bring along (Settings, Snappy, Outfit).
+  // After the story he's at her side until midnight; after that he's hers to bring along (her wardrobe).
   Events.outfit('littleclip', { name: 'The little clip', markup: LITTLE, from: 'lastclip', day: () => Events.lasting('lastclip') });
 
   // ---- while she has him: now and then she pats him, sometimes they both eye a cleanup notice that pops up (it's

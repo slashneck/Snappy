@@ -228,7 +228,7 @@ const Studio = (() => {
            <button class="btn ghost" data-add="webcam">${icon('webcam')}Facecam</button>
            <button class="btn ghost" data-add="inputs">${icon('keyboard')}Input overlay</button>
          </div>`;
-    if (needsSnapshot && window.Mascot) Mascot.mount($('#snapMascot'));
+    if (needsSnapshot && window.Mascot) { Mascot.mount($('#snapMascot')); Events.dressCopy($('#snapMascot')); }
   }
 
   function renderLayers() {

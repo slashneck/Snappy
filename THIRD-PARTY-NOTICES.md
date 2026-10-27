@@ -57,3 +57,9 @@ Copyright (c) .NET Foundation and Contributors, MIT license.
 
 - Source and license: https://github.com/dotnet/runtime
 - Notices for the runtime's own dependencies: https://github.com/dotnet/runtime/blob/main/THIRD-PARTY-NOTICES.TXT
+
+## Shibahu (3D model)
+
+One of Snappy's hidden scenes includes "Shibahu" (https://skfb.ly/ovSrM) by 腱鞘炎の人 (Kensyouen), licensed under
+Creative Commons Attribution 4.0 (http://creativecommons.org/licenses/by/4.0/). Changes: posed, animated, lit and
+rendered into short video clips for Snappy; the model itself is not included.

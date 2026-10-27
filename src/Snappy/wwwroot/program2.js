@@ -357,8 +357,9 @@
     <path d="M0 -26 Q4 -4 26 0 Q4 4 0 26 Q-4 4 -26 0 Q-4 -4 0 -26 Z" fill="url(#st-grad)" stroke="#0a0a0a" stroke-width="2.5" stroke-linejoin="round"/>
     <circle cx="-5" cy="-2" r="2.6" fill="#0a0a0a"/><circle cx="5" cy="-2" r="2.6" fill="#0a0a0a"/>
     <path d="M-4 5 Q0 8.5 4 5" fill="none" stroke="#0a0a0a" stroke-width="2" stroke-linecap="round"/></svg>`;
-  const SHADES = `<path d="M44 104 H156 V116 Q154 138 128 138 Q108 138 104 120 H96 Q92 138 72 138 Q46 138 44 116 Z" fill="#0a0a0a"/>
-    <path d="M58 110 L74 110 M114 110 L130 110" stroke="#5a5a5a" stroke-width="4" stroke-linecap="round"/>`;
+  // (behind them her eyes are hidden: they'd peek out above and below the lenses)
+  const SHADES = `<g class="sg-shades"><path d="M44 104 H156 V116 Q154 138 128 138 Q108 138 104 120 H96 Q92 138 72 138 Q46 138 44 116 Z" fill="#0a0a0a"/>
+    <path d="M58 110 L74 110 M114 110 L130 110" stroke="#5a5a5a" stroke-width="4" stroke-linecap="round"/></g>`;
 
   async function steve(ctx) {
     const W = innerWidth, H = innerHeight;

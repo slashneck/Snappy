@@ -341,7 +341,7 @@ function markActiveNav() {
   $$('.nav-item').forEach((b) => {
     const active = b.dataset.view
       ? state.view === b.dataset.view
-      : !['settings', 'studio'].includes(state.view) && b.dataset.folder === state.folder;
+      : !['settings', 'studio', 'wardrobe'].includes(state.view) && b.dataset.folder === state.folder;
     b.classList.toggle('active', active);
   });
 }
@@ -677,7 +677,9 @@ function showView(name) {
   $('#playerView').hidden = name !== 'player';
   $('#settingsView').hidden = name !== 'settings';
   $('#studioView').hidden = name !== 'studio';
+  $('#wardrobeView').hidden = name !== 'wardrobe';
   if (previous === 'studio' && name !== 'studio') window.Studio?.leave();
+  if (previous === 'wardrobe' && name !== 'wardrobe') window.Wardrobe?.close(null);
   markActiveNav();
 }
 
@@ -973,8 +975,8 @@ function renderSettings() {
   const refocus = focused?.dataset?.durationMin ? `[data-duration-min="${focused.dataset.durationMin}"]`
     : focused?.dataset?.durationSec ? `[data-duration-sec="${focused.dataset.durationSec}"]` : null;
 
-  const opt = (value, label, current, disabled = false) =>
-    `<option value="${esc(value)}"${String(value) === String(current) ? ' selected' : ''}${disabled ? ' disabled' : ''}>${esc(label)}</option>`;
+  const opt = (value, label, current, disabled = false, cls = '') =>
+    `<option value="${esc(value)}"${cls ? ` class="${cls}"` : ''}${String(value) === String(current) ? ' selected' : ''}${disabled ? ' disabled' : ''}>${esc(label)}</option>`;
   const row = (title, desc, control) => `<div class="row"><div class="row-text"><div class="row-title">${title}</div>${desc ? `<div class="row-desc">${desc}</div>` : ''}</div><div class="row-control">${control}</div></div>`;
   const select = (key, options) => `<select class="select" data-setting="${key}">${options}</select>`;
   const toggle = (key, on, off) =>
@@ -1088,11 +1090,8 @@ function renderSettings() {
       ${s.mascotTalks !== false ? row('Events and surprises', 'Once in a while, every few days at most, she gets up to something: a little adventure, or a whole story. Skip any of them with Esc.', toggle('mascotEvents', s.mascotEvents !== false)) : ''}
       ${row('Show me around', 'Snappy walks you through the settings, or through everything you can do with a clip.',
         '<button class="btn ghost" data-action="tourAgain">Settings</button><button class="btn ghost" data-action="tourClip">Clips</button>')}
-      ${Events.outfits.length ? row('Outfit', 'Anything she has worn in an event you watched to the end. After an event she keeps its outfit on until midnight, and on special days she dresses up by herself, unless something is picked here.',
-        select('mascotOutfit', opt('', 'None', s.mascotOutfit || '') + Events.outfits.map((x) => opt(x.id, x.name, s.mascotOutfit || '')).join(''))) : ''}
-      ${Events.aftermaths.length ? row('Aftermath', 'Some events leave a little something behind in the app until midnight. Pick one to keep for good.',
-        select('mascotAftermath', opt('', 'Only on the day', s.mascotAftermath || '') + Events.aftermaths.map((x) => opt(x.id, x.label, s.mascotAftermath || '')).join(''))) : ''}
-      ${row('Achievements', 'Every event and secret you have found so far, ready to watch again.', '<button class="btn ghost" data-action="achievements">Open</button>')}
+      ${row('Wardrobe', 'Her outfits and skins, what events leave behind, and every achievement, ready to watch again. Click her name in the corner to open it any time.',
+        '<button class="btn ghost" data-action="wardrobe">Open</button>')}
     </div>
 
     <div class="settings-group" id="set-general"><h2>General</h2>
@@ -1105,7 +1104,7 @@ function renderSettings() {
       ${updateRowHtml()}
       ${row('Update automatically', 'Checks GitHub every few hours. A new version downloads in the background and installs once your PC has been idle for 10 minutes.', toggle('checkForUpdates', s.checkForUpdates))}
       ${Notes.versions().length ? row('Patch notes', 'Everything that changed, version by version, the way Snappy tells it.',
-        Notes.versions().slice(0, 4).map((v) => `<button class="btn ghost" data-action="whatsNew" data-version="${esc(v)}">${esc(v)}</button>`).join('')) : ''}
+        `<select class="select" data-notes-version>${opt('', 'Pick a version', '')}${Notes.versions().map((v) => opt(v, `Snappy ${v}`, '')).join('')}</select>`) : ''}
       ${s.developerMode || Terminal.found() ? row('Developer mode', 'Opens up the terminal next to the arcade.', toggle('developerMode', !!s.developerMode)) : ''}
       ${row('Source code', 'Snappy is free software under the GPL 3.0 license.', '<button class="btn ghost" data-action="openGithub">Open GitHub</button>')}
       ${row('Licenses and credits', 'The projects Snappy is built with.', '<button class="btn ghost" data-action="licenses">View</button>')}
@@ -1574,6 +1573,9 @@ function bind() {
   });
   $('#settingsScroller').addEventListener('scroll', () => requestAnimationFrame(updateSettingsNav), { passive: true });
   form.addEventListener('change', async (e) => {
+    // a version picked from the patch notes list: play its notes, and the list goes back to asking
+    const notes = e.target.closest('[data-notes-version]');
+    if (notes) { const v = notes.value; notes.value = ''; if (v) Notes.show(v); return; }
     const durationSelect = e.target.closest('[data-duration-select]');
     const durationInput = e.target.closest('[data-duration-min], [data-duration-sec]');
     if (durationSelect || durationInput) { await onDurationChange(durationSelect, durationInput); return; }
@@ -1604,7 +1606,7 @@ function bind() {
       }
     });
     if (key === 'soundVolumePercent') Speech.sample(); // let them hear the new volume
-    if (key === 'mascotAftermath') Events.remark();
+    if (key === 'mascotAftermath') Events.remark(true);
     if (key === 'developerMode') Terminal.refresh();
     Talk.settingChanged(key, el.type === 'checkbox' || key === 'mascotOutfit' || key === 'mascotAftermath' ? value : Number(value));
   });
@@ -1653,8 +1655,8 @@ function bind() {
     } else if (action === 'pickScreenshots') {
       const folder = await snappy.call('settings.pickFolder');
       if (folder) await saveSettings((s) => { s.screenshotsFolder = folder; });
-    } else if (action === 'achievements') {
-      Events.list();
+    } else if (action === 'wardrobe') {
+      Wardrobe.show();
     } else if (action === 'whatsNew') {
       Notes.show(e.target.closest('[data-action]').dataset.version || state.version);
     } else if (action === 'tourAgain') {

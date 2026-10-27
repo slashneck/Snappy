@@ -11,7 +11,14 @@
     <circle cx="100" cy="118" r="34" fill="#0b1318" stroke="#2a3a44" stroke-width="6"/>
     <clipPath id="pg-socket"><circle cx="100" cy="118" r="31"/></clipPath>
     <g clip-path="url(#pg-socket)"><g class="pg-look"><circle class="pg-iris" cx="100" cy="118" r="14" fill="#8fe6ff"/><circle cx="95" cy="113" r="4" fill="#fff" opacity=".75"/></g>
-    <rect class="pg-lid" x="66" y="84" width="68" height="68" fill="#1d262d"/></g></g>`;
+    <g class="pg-buffer" fill="#8fe6ff"><circle class="pg-dot" cx="100" cy="118" r="5" style="--a: 0deg"/>
+      <circle class="pg-dot" cx="100" cy="118" r="5" fill-opacity=".7" style="--a: 120deg"/><circle class="pg-dot" cx="100" cy="118" r="5" fill-opacity=".45" style="--a: 240deg"/></g>
+    <path class="pg-smile" d="M84 124 Q100 104 116 124" fill="none" stroke="#8fe6ff" stroke-width="7" stroke-linecap="round"/>
+    <rect class="pg-lid" x="66" y="84" width="68" height="68" fill="#1d262d"/></g>
+    <circle class="pg-ring" cx="100" cy="118" r="34" fill="none" stroke="#8fe6ff" stroke-width="4"/>
+    <circle class="pg-rec" cx="158" cy="82" r="6.5" fill="#2a3a44" stroke="#0a0a0a" stroke-width="3"/>
+    <clipPath id="pg-body"><rect x="14" y="58" width="172" height="120" rx="40"/></clipPath>
+    <g clip-path="url(#pg-body)"><rect class="pg-scan" x="10" y="50" width="180" height="5" fill="#8fe6ff"/></g></g>`;
   const TINY_PROGRAM = `<svg viewBox="-16 -18 232 222"><ellipse cx="100" cy="194" rx="62" ry="7" fill="#000" opacity=".35"/>${SKIN}</svg>`;
 
   // Lines under whoever stands where Snappy stood, each speaker in their own style (they've swapped, so has the lettering).
@@ -318,7 +325,10 @@
 
   // Afterwards: a little switch in her corner until midnight (or the outfit, to keep it). Flipped, she is the Program:
   // its body, its eye, its voice, its lettering, and its idea of small talk.
-  Events.outfit('programskin', { name: 'The Program (swapped)', markup: SKIN, from: 'swap', today: false, skin: 'program' });
+  Events.outfit('programskin', { name: 'The Program (swapped)', markup: SKIN, from: 'swap', today: false, skin: 'program',
+    popup: { bg: '#0f1a20', ink: '#bfeeff', sub: '#78afc3', error: '#ff7a6e', edge: '#7ee8ff', font: 'Consolas', bold: true, radius: 10,
+      saving: 'Writing to disk.', saved: ['Saved.', 'Saved. No errors.', 'Captured. Filed. Done.', 'Stored safely.', 'Acceptable footage.', 'Logged.'],
+      failed: 'That did not work.', shiny: 'A golden frame. Statistically irrelevant.', screenshot: 'Screenshot stored.', moment: 'Moment logged.' } });
   Events.aftermath('swap', { label: 'The swap switch', marks: [{ at: '.sidebar-foot', cls: 'af-switch', html: '<button tabindex="-1" title="Swap with the Program"><i></i></button>' }] });
   Speech.skinChatter = {
     program: [

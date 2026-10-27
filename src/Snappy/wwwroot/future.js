@@ -10,13 +10,13 @@
   const pop = (el) => { void el.offsetWidth; el.classList.add('in'); };
   const centerOf = (el) => { const r = el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; };
 
-  // Her, a few years on: aviators, a jacket, and a scar over one eye.
+  // Her, a few years on: aviators (her eyes hidden behind them, like with the sunglasses), a jacket, and a scar over one eye.
   const FUTURE = `<clipPath id="ft-body"><rect x="10" y="54" width="180" height="128" rx="44"/></clipPath>
     <g clip-path="url(#ft-body)"><rect x="0" y="152" width="200" height="40" fill="#1d1d23"/>
       <path d="M100 152 L78 182 H62 L84 152 Z M100 152 L122 182 H138 L116 152 Z" fill="#33333d"/>
       <path d="M100 156 V182" stroke="#8a8a96" stroke-width="2.5" stroke-dasharray="3 3"/></g>
     <rect x="10" y="54" width="180" height="128" rx="44" fill="none" stroke="#0a0a0a" stroke-width="6"/>
-    <path d="M44 104 H96 Q96 136 72 138 Q46 136 44 112 Z M104 104 H156 Q154 136 128 138 Q104 136 104 112 Z" fill="#101014" stroke="#0a0a0a" stroke-width="3" stroke-linejoin="round"/>
+    <path class="sg-shades" d="M44 104 H96 Q96 136 72 138 Q46 136 44 112 Z M104 104 H156 Q154 136 128 138 Q104 136 104 112 Z" fill="#101014" stroke="#0a0a0a" stroke-width="3" stroke-linejoin="round"/>
     <path d="M96 108 Q100 103 104 108" fill="none" stroke="#0a0a0a" stroke-width="4"/>
     <path d="M54 112 L66 110 M114 112 L126 110" stroke="#5c6470" stroke-width="3" stroke-linecap="round"/>
     <g stroke="#c96b6b" stroke-linecap="round"><path d="M56 80 L68 101" stroke-width="4"/><path d="M57 89 L64 86 M61 96 L68 93" stroke-width="2.5"/></g>`;

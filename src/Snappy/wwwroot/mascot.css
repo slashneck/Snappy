@@ -428,11 +428,13 @@
 /* only one Snappy on screen at a time */
 .mascot { transition: opacity .3s ease; }
 /* (a picture of her in a frame is not another her) */
-.snappy-solo .mascot:not(.lead):not(.picture) { opacity: 0 !important; }
+.snappy-solo .mascot:not(.lead):not(.picture):not(.rack) { opacity: 0 !important; }
 /* the moment one copy of her hands over to another, nothing fades */
 .snappy-swap .mascot, .snappy-swap .mascot * { transition: none !important; }
 
 /* hopping home to her corner, shrinking on the way, and landing softly */
+/* a still picture of her (the wardrobe's racks): nothing moves */
+.mascot.rack, .mascot.rack * { animation: none !important; transition: none !important; }
 .homing { transition: left var(--home-ms) cubic-bezier(.3, .55, .3, 1), top var(--home-ms) cubic-bezier(.45, 0, .3, 1),
   width var(--home-ms) cubic-bezier(.4, 0, .25, 1), height var(--home-ms) cubic-bezier(.4, 0, .25, 1) !important; }
 .homing .mascot { width: 100% !important; height: 100% !important; }

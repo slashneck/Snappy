@@ -305,9 +305,10 @@
   // pointer back and forth over her makes her close her eyes and lean into it.
   const listeners = new Set();
   const emit = (name, el) => { for (const fn of listeners) fn(name, el); };
+  // (a copy of her that's only for spinning, the big 3D one, doesn't react to being touched)
   const mascotAt = (target) => {
     const el = target?.closest?.('.mascot');
-    return el && !frozen && instances.has(el) ? el : null;
+    return el && !frozen && instances.has(el) && !el.classList.contains('spin-only') ? el : null;
   };
   function react(el, cls, ms) {
     for (const other of reactions) if (other !== cls) el.classList.remove(other);
@@ -412,7 +413,8 @@
     let outfit = host.querySelector('.m-outfit:not(.off):not(.behind)');
     let back = host.querySelector('.m-outfit.behind:not(.off)');
     const off = (g) => { if (!g) return; g.classList.add('off'); setTimeout(() => g.remove(), 350); };
-    if (!markup) { off(outfit); off(back); return; }
+    // (worn: in one go, nothing fading out first, e.g. halfway through a twirl in the wardrobe)
+    if (!markup) { if (worn) { outfit?.remove(); back?.remove(); } else { off(outfit); off(back); } return; }
     if (outfit?.dataset.markup === markup) return;
     // a different one: the old one comes off and the new one goes on (unless she walked in wearing it)
     if (outfit && !worn) { off(outfit); off(back); outfit = back = null; }
@@ -428,7 +430,8 @@
     if (behind) {
       if (!back) { back = layer(' behind'); host.insertBefore(back, host.firstChild); }
       back.innerHTML = behind;
-    } else off(back);
+    } else if (worn) back?.remove();
+    else off(back);
   }
 
   // Only one Snappy on screen: while a big one is out (a tour, a surprise, her work bubble), every other copy of her
@@ -529,8 +532,106 @@
     setTimeout(() => el.classList.remove(cls), ms);
   }
 
+  // ----- The pop-up that shows up when you save a clip plays strips of pictures of her, drawn ahead of time by
+  // tools/mascot/render.mjs. With an outfit on, they're drawn again right here: the same moods, frames and layout, on
+  // a copy of her nobody sees, with every transform and colour baked into each picture so it draws without the CSS.
+  const STRIPS = { clip: ['clipping', 27], working: ['working', 36], happy: ['happy', 35], error: ['error', 39] };
+  const CELL = 128, COLS = 13, FPS = 30;
+  const PAINT = ['fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 'stroke-dasharray', 'opacity', 'fill-opacity',
+    'stroke-opacity', 'display', 'visibility', 'filter'];
+  function bake(svgEl) {
+    const copy = svgEl.cloneNode(true);
+    const from = [...svgEl.querySelectorAll('*')], to = [...copy.querySelectorAll('*')];
+    const space = svgEl.getScreenCTM().inverse();
+    const at = new Map([[svgEl, new DOMMatrix()]]);
+    // where each element sits in her own coordinates, as the page draws it right now
+    // (something hidden has no position of its own: it goes where its parent is)
+    const place = (el) => {
+      if (!at.has(el)) {
+        const ctm = el.getScreenCTM?.();
+        at.set(el, ctm ? DOMMatrix.fromMatrix(space.multiply(ctm)) : place(el.parentNode));
+      }
+      return at.get(el);
+    };
+    from.forEach((el, i) => {
+      const out = to[i];
+      out.removeAttribute('class');
+      if (el.closest('defs, clipPath, mask, linearGradient, radialGradient')) return;
+      const cs = getComputedStyle(el);
+      for (const p of PAINT) {
+        const v = cs.getPropertyValue(p);
+        if (v && !v.includes('url(')) out.style.setProperty(p, v);
+      }
+      const m = place(el.parentNode).inverse().multiply(place(el));
+      out.setAttribute('transform', `matrix(${m.a} ${m.b} ${m.c} ${m.d} ${m.e} ${m.f})`);
+    });
+    copy.removeAttribute('class');
+    copy.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    copy.setAttribute('width', CELL);
+    copy.setAttribute('height', CELL);
+    return new XMLSerializer().serializeToString(copy);
+  }
+  async function strip(markup, mood, frames) {
+    const host = document.createElement('div');
+    host.className = 'mascot frozen';
+    Object.assign(host.style, { position: 'fixed', left: '-4000px', top: '0', width: `${CELL}px`, height: `${CELL}px`, pointerEvents: 'none' });
+    host.innerHTML = svg();
+    document.body.appendChild(host);
+    try {
+      host.dataset.mood = mood;
+      host.dataset.eyes = MOOD_EYES[mood] || 'open';
+      host.style.setProperty('--lx', 0);
+      host.style.setProperty('--ly', 0.15);
+      dress(host, markup, true);
+      await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+      const canvas = document.createElement('canvas');
+      canvas.width = COLS * CELL;
+      canvas.height = Math.ceil(frames / COLS) * CELL;
+      const g = canvas.getContext('2d');
+      for (let i = 0; i < frames; i++) {
+        for (const a of host.getAnimations({ subtree: true })) { a.pause(); a.currentTime = (i * 1000) / FPS; }
+        const img = new Image();
+        img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(bake(host.querySelector('svg')))}`;
+        await img.decode();
+        g.drawImage(img, (i % COLS) * CELL, Math.floor(i / COLS) * CELL, CELL, CELL);
+      }
+      return canvas.toDataURL('image/png').split(',')[1];
+    } finally {
+      host.remove();
+    }
+  }
+  // all four of them, as base64 PNGs by name
+  async function overlayStrips(markup) {
+    const out = {};
+    for (const [name, [mood, frames]] of Object.entries(STRIPS)) out[name] = await strip(markup, mood, frames);
+    return out;
+  }
+  // A still picture of her (not a live copy: she doesn't blink, look round or react), in an outfit: the wardrobe's racks
+  function picture(el, markup) {
+    el.classList.add('mascot', 'rack');
+    el.dataset.eyes = 'open';
+    el.innerHTML = svg();
+    if (markup) dress(el, markup, true);
+    return el;
+  }
+  // strips that were made somewhere else (a skin rendered in 3D), already in the pop-up's layout: read into PNGs
+  async function pictureStrips(urls) {
+    const out = {};
+    for (const [name, url] of Object.entries(urls)) {
+      const img = new Image();
+      img.src = url;
+      await img.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      canvas.getContext('2d').drawImage(img, 0, 0);
+      out[name] = canvas.toDataURL('image/png').split(',')[1];
+    }
+    return out;
+  }
+
   window.Mascot = {
-    mount, setBase, hold, release, flash, face, talking, hop, freeze, still: setStill, act, dress, solo, goHome, swap, gaze, reset, fidget,
+    mount, setBase, hold, release, flash, face, talking, hop, freeze, still: setStill, act, dress, solo, goHome, swap, gaze, reset, fidget, overlayStrips, pictureStrips, picture,
     // a copy with a face of her own, and who's talking among those (null: the usual Snappy)
     own(el) { if (el) el._own = true; },
     speaker(el) { speaker = el?._own ? el : null; },

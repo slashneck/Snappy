@@ -123,7 +123,8 @@
       return;
     }
     if (count === 1 && once('firstClip')) {
-      Speech.say(['{joy}Your very first clip! {happy}I could cry.', "{open}Cameras can't cry. {pause}{happy}But still!"], { kind: 'news' });
+      Speech.say(V(['{joy}Your very first clip! {happy}I could cry.', "{open}Cameras can't cry. {pause}{happy}But still!"],
+        ['Your first clip. Saved.', 'Snappy would cry. I have logged the moment instead. It is the same thing.']), { kind: 'news' });
       Life.found('firstClip');
       return;
     }
@@ -332,7 +333,7 @@
       const its = {
         mascotSounds: value ? 'Audio restored.' : 'Muted. Finally, silence.',
         mascotTalks: value ? 'Speech enabled.' : 'Understood. I will be quiet. I was already quiet.',
-        mascotAftermath: value ? 'Kept. Permanently.' : 'Only on the day. Noted.',
+        mascotAftermath: value === 'off' ? 'Nothing. Good.' : value ? 'Kept. Permanently.' : 'Only on the day. Noted.',
         mascotEvents: value ? 'Events enabled. Snappy will be thrilled.' : 'Events disabled. Snappy will be devastated. I will tell her gently.',
         mascotAnimations: value ? 'Animations on.' : 'Animations off. I prefer stillness anyway.',
         soundVolumePercent: value === 0 ? '...' : value >= 100 ? 'MAXIMUM VOLUME. I do not approve.' : value <= 20 ? 'Quieter. Good.' : null,
@@ -351,10 +352,12 @@
         else say("{worried}Oh... {pause}okay. {open}I'll just be over here. {pause}Quietly.", { force: true });
         break;
       case 'mascotOutfit':
+        if (value === 'programskin') { say(['Hello.', 'I am the camera now. Snappy is resting. She asked me to say she looks great in me.']); break; }
         say(value ? pick(['{shine}Ooh! {pause}{happy}How do I look?', "{wink}Fancy. {pause}{happy}I'm keeping it on.", '{joy}I feel like a whole new camera!'])
           : "{open}Back to basics. {pause}{wink}Still cute.");
         break;
       case 'mascotAftermath':
+        if (value === 'off') { say("{open}Nothing at all? {pause}{wink}Clean look. I can do clean."); break; }
         say(value ? pick(["{shine}Keeping it! {pause}{wink}Some things should stay.", '{happy}Good choice. {pause}{smug}I was hoping you would.'])
           : "{open}Only on the day, then. {pause}{happy}That makes them special.");
         break;

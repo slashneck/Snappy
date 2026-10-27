@@ -18,6 +18,49 @@
   // then has the exchange in `talk` with her (['p' or 's', line] each), or its usual one.
   // Achievements are never named here: there are some to find, that's all.
   const NOTES = {
+    '1.6.0': {
+      title: 'The wardrobe update. And a show.',
+      intro: ['{shine}Patch notes! {pause}{joy}I got a WARDROBE!', '{smug}And a few other things. Mostly the wardrobe.'],
+      sections: [
+        { name: 'New', kind: 'new', items: [
+          { text: 'A wardrobe. Click my name up in the corner: every outfit and look, what stories leave behind, and all your achievements, in one place. Pick something and I put it on right there.', say: '{joy}Twirl included.', gag: 'name' },
+          { text: 'Seven new looks, and not hats: whole new bodies. Each one comes out of a story in the terminal. You can tell them apart. They are purple.', say: '{smug}I contain multitudes.', gag: 'twirl' },
+          { text: 'One of the secret words starts a whole show. Every frame rendered, every note composed, on purpose.', say: '{smug}Slop could never.' },
+          { text: 'More than fifty new conversations in the terminal, and the three of us talk among ourselves a lot more when it sits quiet.', by: 'program', talk: [
+            ['p', 'Claude wrote most of them.'],
+            ['s', '{smug}It shows. {pause}{wink}In a good way.'],
+            ['p', 'It also wants you to know the dashes are gone. All of them.'],
+          ] },
+          { text: 'Some looks change how I talk. Some change how I sound.', say: '{wink}Nyes. {pause}...I mean, yes.' },
+        ] },
+        { name: 'Better', kind: 'better', items: [
+          { text: 'The pop-up in the corner wears whatever I am wearing, all the way down to a whole new body. A few of them have a move of their own when a clip saves.', say: '{shine}Matching!' },
+          { text: 'Every big me wears my outfit too: the one in an empty folder, the tour guide, the one keeping you company while something exports.', say: '{love}All of us. {pause}Coordinated.' },
+          { text: 'Snapshot Roulette is rebuilt from scratch. New table, new rules, new dealer.', by: 'program', talk: [
+            ['p', 'Do not ask about the dealer.'],
+            ['s', '{worried}Is the dealer you?'],
+            ['p', 'Do not ask about the dealer.'],
+          ] },
+          { text: 'The cat ears are rounder, and they move. They also come with a voice.', say: '{joy}Nya~' },
+          { text: 'Outfits, aftermaths and achievements moved out of Settings, into the wardrobe.' },
+        ] },
+        { name: 'Fixed', kind: 'fixed', items: [
+          { text: 'In a whole new body, I used to flicker after every conversation. I stay put now.', say: '{flat}It was a whole thing.' },
+          { text: 'My sunglasses no longer have my eyes peeking out from behind them. It was not cool.', say: '{smug}Now it is cool.' },
+        ] },
+        { name: 'Known issues', kind: 'known', items: [
+          { text: 'New Snappy Snap left the arcade.', by: 'program', talk: [
+            ['p', 'Waiting for a bar to fill is not a game.'],
+            ['s', '{sad}I liked the bar.'],
+          ] },
+          { text: 'The games are still incredibly unbalanced.', by: 'program', talk: [
+            ['s', '{flat}Still?'],
+            ['p', 'Still.'],
+          ] },
+        ] },
+      ],
+      outro: ['{happy}That is everything!', '{wink}Go find the purple ones.'],
+    },
     '1.5.0': {
       title: 'The one with the terminal. That is it.',
       intro: ['{shine}Patch notes! {pause}{joy}A whole new version!', "{smug}Let's see everything that's new!"],
@@ -136,6 +179,22 @@
 
   // What she does along with some of her remarks.
   const GAGS = {
+    // a ring round her name, up in the corner: that's where the wardrobe is
+    async name(ctx, a, S, line) {
+      const r = document.querySelector('.brand-name')?.getBoundingClientRect();
+      if (r?.width) {
+        const at = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+        const ring = document.createElement('div');
+        ring.className = 'pn-ring pn-name';
+        Object.assign(ring.style, { left: `${at.x}px`, top: `${at.y}px`, width: `${r.width + 22}px`, height: `${r.height + 14}px` });
+        document.body.appendChild(ring);
+        ctx.onEnd(() => ring.remove());
+        setTimeout(() => ring.remove(), 1300);
+        a.lookAt(at.x, at.y, true);
+        Speech.tune('chime', 0.5);
+      }
+      await S(line);
+    },
     async twirl(ctx, a, S, line) {
       a.twirl();
       Speech.tune('whoosh');

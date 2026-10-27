@@ -183,6 +183,8 @@ kbd {
 }
 .select:hover { box-shadow: inset 0 0 0 1px var(--line-2); }
 .select.compact { height: 32px; padding: 0 26px 0 10px; background-position: right 8px center; font-size: 13px; }
+/* a whole new look for her (a skin) stands out in the outfit list */
+.select option.opt-skin { color: #b48cff; font-weight: 700; }
 .select option { background: var(--surface-2); }
 .text-input {
   width: 100%; height: 38px; padding: 0 12px; border-radius: 10px; border: 0; outline: 0;

@@ -218,5 +218,5 @@
   Events.define('isyou', {
     tier: 'game', title: 'Snappy Is You', hint: 'The rules are on the floor. You can push them.', run: isYou, weight: 1,
   });
-  Events.aftermath('isyou', { label: 'SNAPPY IS YOU', marks: [{ at: '#libraryView .title-block', cls: 'af-rule', html: '<span>SNAPPY</span><span>IS</span><span>YOU</span>' }] });
+  Events.aftermath('isyou', { label: 'SNAPPY IS YOU', cls: 'af-isyou', marks: [{ at: '.brand-name', cls: 'af-rule', html: '<span>SNAPPY</span><span>IS</span><span>YOU</span>' }] });
 })();

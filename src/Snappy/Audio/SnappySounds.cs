@@ -86,6 +86,12 @@ internal static class SnappySounds
     /// <summary>Stops whatever is playing, e.g. music that gets cut off.</summary>
     public static void Hush() => Do("hush");
 
+    /// <summary>Where longer pieces the page composes (the music for one of her shows) are kept, as raw 16-bit 48 kHz mono.</summary>
+    public static string TrackDir => Path.Combine(AppPaths.LocalDataDir, "sounds");
+
+    /// <summary>One of those pieces, played like her other sounds (so recordings leave it out too).</summary>
+    public static void Track(string path, double volume) => Do(FormattableString.Invariant($"track {volume:0.###} {path}"));
+
     // Sends a command to the player, or plays it right here when there is no player.
     private static void Do(string line)
     {
@@ -161,6 +167,17 @@ internal static class SnappySounds
                 case "hush":
                     Mixer.Clear();
                     break;
+                case "track" when parts.Length > 2:
+                {
+                    // only ever a piece from the sounds folder
+                    string path = Path.GetFullPath(string.Join(' ', parts.Skip(2)));
+                    if (!path.StartsWith(Path.GetFullPath(TrackDir) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) || !File.Exists(path)) break;
+                    var bytes = File.ReadAllBytes(path);
+                    var pcm = new float[bytes.Length / 2];
+                    for (int i = 0; i < pcm.Length; i++) pcm[i] = BitConverter.ToInt16(bytes, i * 2) / 32768f;
+                    Mixer.Play(pcm, Num(1) * Num(1));
+                    break;
+                }
             }
         }
         catch
@@ -185,7 +202,8 @@ internal static class SnappySounds
             if (gain <= 0 || pcm.Length == 0) return;
             lock (Voices)
             {
-                if (Voices.Count > 24) Voices.RemoveAt(0);
+                // too many at once: the oldest short sound goes (a long piece of music keeps playing)
+                if (Voices.Count > 24) Voices.RemoveAt(Math.Max(0, Voices.FindIndex(v => v.Pcm.Length < Rate * 5)));
                 Voices.Add((pcm, 0, (float)gain));
                 if (_thread is { IsAlive: true }) return;
                 _thread = new Thread(Run) { IsBackground = true, Name = "snappy-sounds", Priority = ThreadPriority.AboveNormal };
@@ -642,6 +660,36 @@ internal static class SnappySounds
                 new Note(LullabyBass[i / 4], 2.35, i * 0.6, "triangle", i % 4 == 0 ? 0.03 : 0),
             }).ToArray()),
             // a dark room: a low, slightly sour drone, a faint hiss and a heartbeat
+            // Snapshot Roulette's back room: a low hum, a buzzing bulb, a slow heartbeat, and something creaking far off
+            "backroom" => Render(6.0,
+                new Note(50, 6.0, 0, "triangle", 0.05), new Note(100.4, 6.0, 0, "triangle", 0.016), new Note(120, 6.0, 0, Gain: 0.0035),
+                new Note(0, 6.0, 0, "noise", 0.004),
+                new Note(62, 0.16, 1.0, "sine", 0.32, 0.5), new Note(62, 0.16, 1.32, "sine", 0.22, 0.5),
+                new Note(62, 0.16, 4.0, "sine", 0.32, 0.5), new Note(62, 0.16, 4.32, "sine", 0.22, 0.5),
+                new Note(170, 1.3, 2.4, "theremin", 0.01, 0.78)),
+            // a shotgun: the crack, a boom under it, and the room ringing out
+            "gunshot" => Render(1.8,
+                new Note(0, 0.04, 0, "noise", 0.6), new Note(0, 0.07, 0.04, "noise", 0.34), new Note(0, 0.12, 0.11, "noise", 0.17),
+                new Note(0, 0.3, 0.23, "noise", 0.07), new Note(0, 0.7, 0.53, "noise", 0.02),
+                new Note(52, 1.2, 0, "sine", 0.8, 0.55), new Note(110, 0.35, 0, "triangle", 0.16, 0.4)),
+            // racking the pump: back, and forward
+            "rack" => Render(0.45,
+                new Note(0, 0.05, 0, "noise", 0.2), new Note(1400, 0.02, 0.01, Gain: 0.04), new Note(200, 0.06, 0.02, "triangle", 0.12, 0.6),
+                new Note(0, 0.05, 0.22, "noise", 0.24), new Note(1100, 0.02, 0.23, Gain: 0.05), new Note(160, 0.08, 0.24, "triangle", 0.14, 0.6)),
+            // the hammer falling on a blank
+            "dryfire" => Render(0.3, new Note(0, 0.02, 0, "noise", 0.2), new Note(2400, 0.015, 0, Gain: 0.05), new Note(900, 0.03, 0.01, "triangle", 0.07, 0.5)),
+            // a shell going into the tube
+            "shell" => Render(0.25, new Note(0, 0.03, 0, "noise", 0.1), new Note(700, 0.05, 0, "triangle", 0.08, 0.7), new Note(1200, 0.04, 0.02, "sine", 0.05)),
+            // ears ringing after a shot
+            "ring" => Render(3.2, new Note(3600, 3.1, 0, "theremin", 0.022, 0.97)),
+            // a charge coming back: a rising whine and a thump
+            "charge" => Render(0.9, new Note(380, 0.6, 0, "triangle", 0.05, 4), new Note(70, 0.22, 0.62, "sine", 0.45, 0.5), new Note(0, 0.05, 0.62, "noise", 0.08)),
+            // handcuffs snapping shut
+            "cuffs" => Render(0.4, new Note(0, 0.03, 0, "noise", 0.12), new Note(1800, 0.02, 0, Gain: 0.04), new Note(0, 0.03, 0.14, "noise", 0.12),
+                new Note(1600, 0.02, 0.14, Gain: 0.04)),
+            // a handsaw going through a barrel
+            "saw" => Render(1.0, new Note(0, 0.14, 0, "noise", 0.12), new Note(0, 0.14, 0.2, "noise", 0.14), new Note(0, 0.14, 0.4, "noise", 0.12),
+                new Note(0, 0.14, 0.6, "noise", 0.14), new Note(220, 0.75, 0, Gain: 0.012, Bend: 1.2)),
             "dread" => Render(4.0,
                 new Note(55, 4.0, 0, "triangle", 0.06), new Note(58.3, 4.0, 0, "triangle", 0.035), new Note(0, 4.0, 0, "noise", 0.006),
                 new Note(70, 0.14, 0.0, "sine", 0.3, 0.5), new Note(70, 0.14, 0.3, "sine", 0.2, 0.5),

@@ -143,9 +143,10 @@ public sealed class TrayApp : ApplicationContext
         {
             if (s.PlaySoundOnSave) Audio.SnappySounds.Snap(s.SoundVolumePercent);
             // before an early bird has seen her find her voice in the app, the pop-up stays plain
-            string line = s.EarlyBird && !s.EarlyBirdSeen ? "Clip saved" : Pick(SavedLines);
+            var style = OverlayOutfit.Style;
+            string line = s.EarlyBird && !s.EarlyBirdSeen ? "Clip saved" : Pick(style?.Saved is { Length: > 0 } saved ? saved : SavedLines);
             bool shiny = overlay && wasShiny;
-            if (shiny) line = "A shiny Snappy!";
+            if (shiny) line = style?.Shiny ?? "A shiny Snappy!";
             if (overlay) TryOverlay(true, line, $"{FormatSeconds((int)Math.Round(r.DurationSeconds))} of {r.AppName}", shiny);
             if (shiny && !s.ShinySeen)
             {
@@ -157,24 +158,24 @@ public sealed class TrayApp : ApplicationContext
         else
         {
             SystemSounds.Hand.Play();
-            if (overlay) TryOverlay(false, "Oops, that didn't work", r.Error ?? "Unknown error");
+            if (overlay) TryOverlay(false, OverlayOutfit.Style?.Failed ?? "Oops, that didn't work", r.Error ?? "Unknown error");
             else if (_libraryWindow == null) _tray.ShowBalloonTip(5000, "Couldn't save clip", r.Error ?? "Unknown error", ToolTipIcon.Warning);
         }
     }
 
-    // What Snappy says in the corner when a clip is saved.
+    // What Snappy says in the corner when a clip is saved (a skin brings its own lines, see OverlayOutfit.Style).
     private static readonly string[] SavedLines = { "Got it!", "Saved!", "Click! Saved.", "Nice one!", "Into the collection!", "That one's a keeper!" };
     private static string Pick(string[] lines) => lines[Random.Shared.Next(lines.Length)];
 
     private void OnScreenshotSaved(string path)
     {
         if (_recorder.Settings.PlaySoundOnSave) Audio.SnappySounds.Snap(_recorder.Settings.SoundVolumePercent);
-        if (OverlayWanted()) TryOverlay(true, "Snap! Screenshot saved", Path.GetFileName(Path.GetDirectoryName(path)) ?? "");
+        if (OverlayWanted()) TryOverlay(true, OverlayOutfit.Style?.Screenshot ?? "Snap! Screenshot saved", Path.GetFileName(Path.GetDirectoryName(path)) ?? "");
     }
 
     private void OnMomentMarked()
     {
-        if (OverlayWanted()) TryOverlay(true, "Moment marked", "It shows on the timeline of your next clip");
+        if (OverlayWanted()) TryOverlay(true, OverlayOutfit.Style?.Moment ?? "Moment marked", "It shows on the timeline of your next clip");
     }
 
     private void TryOverlay(bool success, string title, string sub, bool shiny = false)

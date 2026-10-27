@@ -13,6 +13,9 @@
   transition: scale .55s var(--spring-bouncy), opacity .12s ease-out;
 }
 .speech.in { scale: 1; opacity: 1; }
+/* under her (in the wardrobe): centred, the tail on top */
+.speech.below { width: 270px; translate: -50% 0; transform-origin: 50% 0; text-align: center; padding: 11px 26px 11px 26px; }
+.speech.below::before { left: calc(50% - 8px); top: -6px; }
 .speech.leaving { scale: .82; opacity: 0; transition: scale .2s ease-in, opacity .18s ease-in; }
 /* the tail, pointing back at her */
 .speech::before {

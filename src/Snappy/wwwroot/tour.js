@@ -149,7 +149,7 @@
     run.root.querySelector('.tour-hint').hidden = true;
     let writer = null;
     // a line that's been cut off makes no more sound and no more hops
-    writer = Speech.typewriter(run.root.querySelector('.tour-text'), text, {
+    writer = Speech.typewriter(run.root.querySelector('.tour-text'), Speech.accented(text), {
       onWord: () => { if (!writer?.muted) Mascot.hop(); }, onCue: Speech.cue, voice: () => { if (!writer?.muted) Speech.blip(); },
     });
     run.writer = writer;
@@ -234,7 +234,7 @@
   async function start(name) {
     if (run || !tours[name] || window.Speech?.waiting || window.Events?.running) return;
     // (tours are Snappy's: if the Program is the camera right now, it hands her back first)
-    if (window.Events?.skin) { Events.unswap(); setTimeout(() => start(name), 900); return; }
+    if (window.Events?.skin === 'program') { Events.unswap(); setTimeout(() => start(name), 900); return; }
     const def = tours[name];
     const steps = def.steps().filter((s) => !s.targets || s.before || rectOf(s.targets));
     if (!steps.length) return;
@@ -260,6 +260,7 @@
     document.body.appendChild(skip);
     setTimeout(() => skip.classList.add('in'), 700);
     Mascot.mount(root.querySelector('.tour-mascot'));
+    Events.dressCopy(root.querySelector('.tour-mascot'));
     run = { name, steps, root, skip, index: 0, page: 0, turn: 0, scroller: def.scroller, entered: false, unsolo: Mascot.solo(root.querySelector('.tour-mascot')) };
     const me = run;
 

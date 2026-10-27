@@ -439,9 +439,10 @@
 
   // ---------------------------------------------------------------------------
   // Outfits: whatever she wore in an event is hers to wear every day once that event has been seen through
-  // (Settings, Snappy, Outfit). She takes it off whenever something plays and puts it back on afterwards. On a special
+  // (her wardrobe, wardrobe.js). She takes it off whenever something plays and puts it back on afterwards. On a special
   // day she dresses up for it by herself, unless she's already wearing something.
-  //   Events.outfit(id, { name, markup, from, day(), today })
+  //   Events.outfit(id, { name, markup, from, day(), today, strips, voice, rare })   strips: the clip pop-up's pictures,
+  //   ready made; voice: how she sounds in it ({ voice, speed } for her typewriter); rare: listed in purple like a skin
   // After the event it's from she keeps it on until midnight (unless today: false, or something's picked in Settings).
   // ---------------------------------------------------------------------------
   const outfits = new Map();
@@ -464,21 +465,62 @@
     if (current || !slot()?.querySelector('.m-talk')) return;
     const picked = outfits.get(state.settings?.mascotOutfit);
     const flipped = swapped() && outfits.get('programskin');
-    const o = flipped || (picked && owned(picked) && !(skinOff && picked.skin) ? picked : today() || [...outfits.values()].find((x) => x.day?.()) || null);
-    if (!force && (o?.id || null) === wearing) return;
-    // a skin goes on with a little glitch, like the swap itself
-    if (o?.skin || outfits.get(wearing)?.skin) { slot()?.classList.remove('pg-swapping'); void slot()?.offsetWidth; slot()?.classList.add('pg-swapping'); }
+    // ('none' picked: just her, even on a special day or after an event)
+    const plain = state.settings?.mascotOutfit === 'none';
+    const o = flipped || (plain ? null : picked && owned(picked) && !(skinOff && picked.skin) ? picked : today() || [...outfits.values()].find((x) => x.day?.()) || null);
+    // (the pop-up hears about it once at the start, too, in case it's still wearing something from before)
+    if (popupKey === null) dressPopup(o, o === picked ? 0 : midnight());
+    const changed = (o?.id || null) !== wearing;
+    if (!force && !changed) return;
+    // a skin goes on with a little glitch, like the swap itself (only when it really changes, not when she puts the same
+    // one back on after something played)
+    if (changed && (o?.skin || outfits.get(wearing)?.skin)) { slot()?.classList.remove('pg-swapping'); void slot()?.offsetWidth; slot()?.classList.add('pg-swapping'); }
     wearing = o?.id || null;
     document.documentElement.classList.toggle('skin-program', o?.skin === 'program');
     Mascot.dress(slot(), o?.markup || null);
-    // the big picture of her in an empty library is the Program too, while it's the camera
-    const art = document.getElementById('emptyArt');
-    if (art?.querySelector('.m-talk')) Mascot.dress(art, o?.skin ? o.markup : null);
+    Speech.accent = o?.accent || null;
+    for (const el of copies()) Mascot.dress(el, o?.markup || null);
+    dressPopup(o, o === picked ? 0 : midnight());
+  }
+  // The pop-up when you save a clip wears it too: its pictures of her are drawn again with the outfit on and handed to
+  // it, only when the outfit changes (and kept by the app, so it's on even with this window closed). One that's only
+  // for today comes off at midnight. In a skin the pop-up is whoever it is, and talks like them too.
+  let popupKey = null;
+  const hash = (s) => { let h = 2166136261; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); return (h >>> 0).toString(16); };
+  async function dressPopup(o, until) {
+    const markup = o?.markup || null;
+    const voice = o?.skin || '';
+    // a skin can bring its own bubble and lines for the pop-up: colours, font, and what it says
+    const style = (markup && o.popup) || null;
+    const key = markup ? `${state.version}:${hash(markup + JSON.stringify(style) + JSON.stringify(o.strips || null))}:${until}:${voice}` : '';
+    if (key === popupKey) return;
+    popupKey = key;
+    try {
+      if ((await snappy.call('overlay.outfitKey')) === key) return;
+      // (a skin rendered somewhere else brings its strips ready made)
+      const sheets = markup ? await (o.strips ? Mascot.pictureStrips(o.strips) : Mascot.overlayStrips(markup)) : null;
+      if (popupKey === key) await snappy.call('overlay.outfit', { key, until, voice, style, sheets });
+    } catch {
+      popupKey = null;
+    }
   }
   function undress() {
     if (!wearing) return;
     wearing = null;
+    Speech.accent = null;
     Mascot.dress(slot(), null);
+  }
+  // The other copies of her around the app wear the same as the one in the corner: the big one in an empty library,
+  // the one at work in the player, and whoever is showing you around or cutting a clip (dressCopy when they appear).
+  const others = new Set();
+  const copies = () => {
+    for (const el of others) if (!el.isConnected) others.delete(el);
+    return [document.getElementById('emptyArt'), document.getElementById('stageBusyMascot'), ...others].filter((el) => el?.querySelector('.m-talk'));
+  };
+  function dressCopy(el) {
+    if (!el) return;
+    others.add(el);
+    Mascot.dress(el, outfits.get(wearing)?.markup || null, true);
   }
   // an event that ends with her walking home in something: the corner copy takes it over as it is (no popping off and
   // on again), and keeps it if it's what she'd wear anyway
@@ -494,7 +536,7 @@
   // ---------------------------------------------------------------------------
   // Aftermaths: some events leave a small mark on the app for the rest of the day: a new name, a little tag under
   // hers, a sticker somewhere. Never anything in the way, everything fades in and out, and it's gone at midnight (or
-  // kept on for good from Settings, Snappy, Aftermath).
+  // kept on for good from the wardrobe).
   //   Events.aftermath(id, { label, name, tag, title, tone, marks, cls })
   //   label: what Settings calls it; name: what the app is called; tag: a few characters under her name (title: its
   //   tooltip, tone: a colour class); marks: [{ at: selector, cls, html }] little things put inside part of the app;
@@ -503,7 +545,7 @@
   const aftermaths = new Map();
   const lasting = (id) => Date.now() < Number(store.get(`snappy.after.${id}`) || 0);
   const midnight = () => new Date().setHours(24, 0, 0, 0);
-  function linger(id, until = midnight()) { store.set(`snappy.after.${id}`, String(until)); }
+  function linger(id, until = midnight()) { store.set(`snappy.after.${id}`, String(until)); store.set(`snappy.after.at.${id}`, String(Date.now())); }
   // one aftermath at a time: a new one takes over from whatever an earlier event left
   function takeOver(id) {
     for (const other of aftermaths.keys()) if (other !== id && lasting(other)) store.set(`snappy.after.${other}`, '0');
@@ -534,7 +576,13 @@
     // (this can run before the app has its settings)
     let keep = null;
     try { keep = state.settings?.mascotAftermath || null; } catch { /* not yet */ }
-    const on = [...aftermaths.values()].filter((m) => lasting(m.id) || (m.id === keep && has(m.id)));
+    // whatever happened last wins: something left today after the pick in Settings shows; otherwise the pick does
+    // (none at all for 'off', that one and only that one, or else whatever today left)
+    const today = [...aftermaths.values()].filter((m) => lasting(m.id));
+    const pickedAt = Number(store.get('snappy.after.picked') || 0);
+    const fresh = today.filter((m) => Number(store.get(`snappy.after.at.${m.id}`) || 0) > pickedAt);
+    const picked = keep && keep !== 'off' && has(keep) ? aftermaths.get(keep) : null;
+    const on = fresh.length ? fresh : keep === 'off' ? [] : picked ? [picked] : today;
     const key = on.map((m) => m.id).join(' ');
     if (key === marked) return;
     marked = key;
@@ -608,7 +656,8 @@
     el.className = `ach-toast ${def.tier}`;
     el.innerHTML = `${medal(def.tier)}<div class="ach-toast-text"><div class="ach-kicker">Achievement unlocked</div>
       <div class="ach-title">${esc(def.title)}</div><div class="ach-sub">${TIERS[def.tier].name} · ${count} of ${all.length}</div></div>`;
-    el.addEventListener('click', () => { el.classList.add('leaving'); list(); });
+    // (clicked: to them in the wardrobe, or their own window when the wardrobe can't open right now)
+    el.addEventListener('click', () => { el.classList.add('leaving'); if (window.Wardrobe?.ready()) Wardrobe.show('achievements'); else list(); });
     document.body.appendChild(el);
     void el.offsetWidth;
     el.classList.add('in');
@@ -632,13 +681,10 @@
     return true;
   }
 
-  function list() {
-    if (document.querySelector('.ach-backdrop')) return;
+  // every achievement someone can get, by tier (the window, and the wardrobe's shelf)
+  function achievementGroups() {
     const all = shown();
-    const count = all.filter((d) => has(d.id)).length;
-    const root = document.createElement('div');
-    root.className = 'modal-backdrop ach-backdrop';
-    const groups = Object.entries(TIERS).map(([tier, t]) => {
+    return Object.entries(TIERS).map(([tier, t]) => {
       const items = all.filter((d) => d.tier === tier);
       if (!items.length) return '';
       const got = items.filter((d) => has(d.id)).length;
@@ -648,6 +694,19 @@
               ${d.arcade && !d.ending ? '<span class="ach-arcade">In the arcade</span>' : d.run || d.replay ? `<button class="btn ghost" data-replay="${d.id}">Replay</button>` : ''}</div>`
           : `<div class="ach-card locked">${medal(tier, true)}<div class="ach-card-text"><div class="ach-card-title">???</div><div class="ach-card-hint">${esc(d.hint)}</div></div></div>`).join('')}</div></section>`;
     }).join('');
+  }
+  function replay(id) {
+    const def = defs.get(id);
+    if (def) def.replay ? def.replay() : play(def.id);
+  }
+
+  function list() {
+    if (document.querySelector('.ach-backdrop')) return;
+    const all = shown();
+    const count = all.filter((d) => has(d.id)).length;
+    const root = document.createElement('div');
+    root.className = 'modal-backdrop ach-backdrop';
+    const groups = achievementGroups();
     root.innerHTML = `<div class="modal ach">
       <div class="ach-head"><div><h3>Achievements</h3><p>${count ? `${count} of ${all.length} unlocked.` : 'Nothing unlocked yet.'} ${count === all.length ? 'You found them all!' : 'Keep her company and see what happens.'}</p></div>
         <div class="ach-progress"><i style="width:${(count / all.length) * 100}%"></i></div></div>
@@ -662,8 +721,7 @@
       const replay = e.target.closest('[data-replay]');
       if (replay) {
         close();
-        const def = defs.get(replay.dataset.replay);
-        setTimeout(() => (def.replay ? def.replay() : play(def.id)), 350);
+        setTimeout(() => Events.replay(replay.dataset.replay), 350);
         return;
       }
       if (e.target === root || e.target.closest('[data-close]')) close();
@@ -750,8 +808,8 @@
     leaveBehind(id, { instant = false } = {}) { takeOver(id); marked = null; mark(true, instant); },
     // the aftermaths you've seen, for Settings
     get aftermaths() { return [...aftermaths.values()].filter((m) => has(m.id) && m.label); },
-    // after a change in Settings
-    remark() { marked = null; mark(); },
+    // after a change in Settings (picked: the aftermath picker itself, which then wins over what happened before)
+    remark(picked = false) { if (picked) store.set('snappy.after.picked', String(Date.now())); marked = null; mark(); },
     // the arcade's games, in the order they were defined
     get arcade() { return [...defs.values()].filter((d) => d.arcade); },
     get count() { return [...defs.values()].filter((d) => !d.system && has(d.id)).length; },
@@ -760,9 +818,31 @@
     get outfits() { return [...outfits.values()].filter(owned); },
     // what an outfit looks like, owned or not (the patch notes show some off)
     markup: (id) => outfits.get(id)?.markup || null,
-    wear, wearNow,
+    // The wardrobe: every outfit there is, whether she has it yet, and what the event that brings it hints at. One from
+    // an event that's kept secret until it's found (the rare skins) says so, so it's shown without giving it away; one
+    // nobody can get any more (Early Bird's, on a fresh install) isn't there at all.
+    get wardrobe() {
+      return [...outfits.values()].map((o) => {
+        const from = defs.get([o.from].flat()[0]);
+        const secret = !!from?.hidden?.();
+        return { ...o, owned: owned(o), hint: from?.hint || '', secret, gone: secret && !o.skin && !owned(o) };
+      }).filter((o) => !o.gone);
+    },
+    // every aftermath there is, and whether it's been seen
+    get allAftermaths() { return [...aftermaths.values()].filter((m) => m.label).map((m) => ({ ...m, owned: has(m.id), hint: defs.get(m.id)?.hint || '', from: defs.get(m.id)?.title || '' })); },
+    // what she has on right now (a picked one, today's, or a special day's)
+    get wearing() { return wearing; },
+    // the aftermaths showing right now (a kept one, or today's)
+    get aftermathsOn() { return marked ? marked.split(' ') : []; },
+    achievements() { const all = shown(); return { html: achievementGroups(), count: all.filter((d) => has(d.id)).length, total: all.length }; },
+    replay,
+    wear, wearNow, dressCopy,
+    // something she was given outside an event (in the terminal, say): she keeps it on until midnight, like a story's
+    keepOn(id) { if (outfits.has(id)) store.set('snappy.outfit.today', JSON.stringify({ id, until: midnight() })); },
     // what she is underneath the outfit: null for herself, or e.g. 'program' (her voice and small talk change too)
     get skin() { return outfits.get(wearing)?.skin || null; },
+    // how she sounds in what she's wearing, when it changes that (cat ears, say)
+    get voice() { return outfits.get(wearing)?.voice || null; },
     get swapped() { return swapped(); },
     set swapped(on) {
       if (on) { store.set('snappy.swapped', String(midnight())); skinOff = false; } else store.set('snappy.swapped', '0');

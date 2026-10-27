@@ -1,0 +1,152 @@
+/* The wardrobe (wardrobe.js): her on a stage on the left, the racks on the right, like a game's locker. */
+.wd { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(260px, 36%) 1fr; gap: 20px; padding: 0 28px 24px; }
+
+/* ---------- the stage: a soft glow behind her in the colour of what she has on, and her shadow on the floor ---------- */
+.wr-stage { --tint: 255, 255, 255; --tint-a: .07; position: relative; border-radius: var(--radius-lg); overflow: hidden; min-height: 380px;
+  background: linear-gradient(180deg, #18171c 0%, #121115 100%); box-shadow: inset 0 0 0 1px var(--line); }
+.wr-stage.rare { --tint: 168, 126, 255; --tint-a: .2; }
+.wr-glow { position: absolute; left: 50%; top: 46%; width: 120%; aspect-ratio: 1; translate: -50% -50%; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(closest-side, rgba(var(--tint), var(--tint-a)), rgba(var(--tint), 0)); transition: background .5s ease; }
+/* where she stands (she's drawn in .wr-snappy, a fixed box that follows this spot) */
+.wr-spot { position: absolute; left: 50%; top: 22%; width: min(230px, 62%); aspect-ratio: 1; translate: -50% 0; }
+.wr-shadow { position: absolute; left: 50%; bottom: 2%; width: 86%; height: 12%; translate: -50% 0; border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(0, 0, 0, .55), rgba(0, 0, 0, 0)); }
+.wr-caption { position: absolute; left: 22px; right: 22px; bottom: 20px; }
+.wr-rarity { display: inline-block; padding: 3px 8px; border-radius: 5px; background: rgba(255, 255, 255, .07); color: var(--text-2);
+  font: 800 10px/1.3 var(--font); letter-spacing: .12em; text-transform: uppercase; }
+.wr-stage.rare .wr-rarity { background: rgba(168, 126, 255, .18); color: #c9b0ff; }
+.wr-wearing { margin-top: 8px; font: 800 22px/1.15 var(--font-display); color: var(--text); }
+.wr-note { margin-top: 4px; font-size: 12.5px; color: var(--text-3); }
+.wr-snappy { position: fixed; z-index: 60; }
+.wr-body { width: 100%; height: 100%; transform-origin: 50% 100%; }
+.wr-her.mascot { width: 100%; height: 100%; }
+.wr-body.wr-crouch { transform: scale(1.08, .88); transition: transform .1s ease-out; }
+.wr-body.wr-land { animation: wr-land .42s cubic-bezier(.3, .7, .4, 1); }
+@keyframes wr-land { 0% { transform: scale(1.12, .84); } 45% { transform: scale(.95, 1.06); } 100% { transform: none; } }
+/* trying something on: a twirl (she changes side on, halfway), and a puff of sparkles */
+.wr-body.wr-twirl { animation: wr-twirl .62s cubic-bezier(.4, 0, .25, 1); }
+@keyframes wr-twirl { 0% { transform: none; } 20% { transform: scale(1.05, .93); } 45% { transform: perspective(700px) rotateY(88deg); }
+  55% { transform: perspective(700px) rotateY(-88deg); } 82% { transform: scale(.96, 1.05); } 100% { transform: none; } }
+.wr-sparks { position: absolute; left: 50%; top: 48%; width: 0; height: 0; pointer-events: none; }
+.wr-sparks i { position: absolute; width: 11px; height: 11px; margin: -5.5px; background: #fff; opacity: 0;
+  clip-path: polygon(50% 0, 60% 40%, 100% 50%, 60% 60%, 50% 100%, 40% 60%, 0 50%, 40% 40%); animation: wr-spark .85s ease-out forwards; }
+.wr-stage.rare .wr-sparks i:nth-child(2n) { background: #c9b0ff; }
+@keyframes wr-spark { 0% { opacity: 0; transform: translate(0, 0) scale(.3); } 20% { opacity: 1; } 100% { opacity: 0; transform: translate(var(--x), var(--y)) scale(1) rotate(90deg); } }
+
+/* ---------- the racks ---------- */
+.wr-side { min-height: 0; display: flex; flex-direction: column; }
+.wr-tabs { display: flex; gap: 4px; padding: 4px; border-radius: 10px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); align-self: flex-start; }
+.wr-tab { padding: 7px 14px; border: 0; border-radius: 7px; background: none; color: var(--text-2); font: 600 13px/1 var(--font); cursor: pointer; }
+.wr-tab:hover { color: var(--text); }
+.wr-tab.on { background: var(--surface-3); color: var(--text); }
+.wr-panel { flex: 1; min-height: 0; overflow-y: auto; margin-top: 14px; padding-right: 6px; scrollbar-width: thin; }
+.wr-count { margin: 0 0 6px; font-size: 12.5px; color: var(--text-3); }
+.wr-h { margin: 18px 0 10px; font: 700 11px/1 var(--font); letter-spacing: .1em; text-transform: uppercase; color: var(--text-3); }
+
+.wr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(116px, 1fr)); gap: 10px; }
+/* a tile: her in it, its name, and a strip along the bottom in its rarity's colour */
+.wr-tile { position: relative; width: 100%; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 12px 8px 12px; border: 0; border-radius: 10px; overflow: hidden;
+  background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); color: var(--text); cursor: pointer; transition: box-shadow .15s, background .15s; }
+.wr-tile::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255, 255, 255, .14); }
+.wr-tile.rare::after { background: #a87eff; }
+.wr-tile:hover { background: var(--surface-3); }
+.wr-tile.on { box-shadow: inset 0 0 0 2px var(--text); }
+.wr-tile.rare.on { box-shadow: inset 0 0 0 2px #a87eff; }
+.wr-pic.mascot { width: 82px; height: 82px; transition: transform .2s var(--spring); }
+.wr-tile:hover .wr-pic { transform: translateY(-2px); }
+.wr-name { font: 600 12.5px/1.25 var(--font); text-align: center; }
+.wr-tile.rare .wr-name { color: #d2bdff; }
+.wr-on { position: absolute; top: 7px; right: 7px; width: 18px; height: 18px; display: grid; place-items: center; border-radius: 50%; background: var(--text); }
+.wr-on svg { width: 12px; height: 12px; fill: none; stroke: #0a0a0a; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.wr-tile.rare .wr-on { background: #a87eff; }
+.wr-today { position: absolute; top: 7px; right: 7px; padding: 2px 7px; border-radius: 99px; background: var(--text); color: #0a0a0a; font: 800 9.5px/1.4 var(--font); letter-spacing: .04em; text-transform: uppercase; }
+.wr-tile.rare .wr-today { background: #a87eff; }
+.wr-card .wr-today { top: 50%; right: 14px; translate: 0 -50%; }
+/* her plain self, on its own at the top */
+.wr-default { margin: 4px 0 6px; }
+/* locked: her outline only (a secret one, not even that), and a lock */
+.wr-tile.locked { cursor: help; background: var(--surface); }
+.wr-tile.locked .wr-pic { filter: brightness(0) invert(1) opacity(.1); }
+.wr-tile.locked .wr-pic.secret { filter: brightness(0) invert(1) opacity(.05) blur(2px); }
+.wr-lock { position: absolute; left: 50%; top: 38px; width: 24px; height: 24px; translate: -50% 0; fill: none; stroke: var(--text-3); stroke-width: 1.8; stroke-linecap: round; }
+.wr-tile.locked .wr-name { color: var(--text-3); }
+.nope { animation: wr-nope .4s; }
+@keyframes wr-nope { 20% { translate: -5px 0; } 40% { translate: 5px 0; } 60% { translate: -3px 0; } 80% { translate: 2px 0; } }
+
+/* ---------- aftermaths: each on a little copy of her corner ---------- */
+.wr-af-head { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+.wr-af-head .wr-count { flex: 1; margin: 0; }
+.wr-af-head .wr-tabs { flex: none; }
+.wr-list { display: grid; gap: 8px; }
+/* a row: the copy of her corner with it on, then what it is */
+.wr-card { position: relative; width: 100%; display: flex; align-items: center; gap: 0; padding: 0; border: 0; border-radius: 10px; overflow: hidden; text-align: left;
+  background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); color: var(--text); cursor: pointer; transition: background .15s; }
+.wr-card:hover { background: var(--surface-3); }
+.wr-card.on { box-shadow: inset 0 0 0 2px var(--text); }
+.wr-card.locked { cursor: help; background: var(--surface); }
+.wr-af { position: relative; flex: none; width: 260px; height: 86px; overflow: hidden; display: flex; align-items: center; padding: 0 12px;
+  background: #0e0e0e; box-shadow: inset -1px 0 0 var(--line); pointer-events: none; }
+.wr-af-locked { justify-content: center; }
+.wr-af-locked .wr-lock { position: static; translate: none; }
+.wr-card-text { display: flex; flex-direction: column; gap: 4px; padding: 12px 40px 12px 16px; min-width: 0; }
+.wr-card-text b { font: 700 13px/1.2 var(--font); }
+.wr-card-text span { font-size: 12px; color: var(--text-3); }
+.wr-card.locked b { color: var(--text-3); }
+.wr-card .wr-on { top: 50%; right: 14px; translate: 0 -50%; }
+/* the copy of her corner (the real aftermath marks go in it, so it looks exactly like the real thing) */
+.wr-mock { position: relative; flex: none; display: flex; align-items: center; gap: 16px; width: 120%; height: 100%; scale: .84; transform-origin: 0 50%; }
+.wr-mock .brand { position: relative; padding: 0 6px; }
+.wr-mock-her.mascot { width: 56px; height: 56px; flex: none; }
+.wr-mock .brand-name { position: relative; cursor: default; }
+.wr-mock-rec { display: flex; align-items: center; gap: 6px; margin-top: 4px; font: 500 12px/1 var(--font); color: var(--text-3); }
+.wr-mock-rec i { width: 6px; height: 6px; border-radius: 50%; background: #e5484d; }
+.wr-mock-title, .wr-mock-save { position: relative; font: 700 14px/1 var(--font-display); color: var(--text); }
+.wr-mock-save { padding: 8px 12px; border-radius: 9px; background: var(--text); color: #0a0a0a; font: 600 12px/1 var(--font); overflow: hidden; }
+.wr-mock-foot { position: absolute; right: 10px; bottom: 0; width: 60px; height: 10px; }
+.wr-mock-body { position: absolute; right: 0; bottom: 0; width: 70px; height: 70px; }
+.wr-mock .af-mark.af-scream { position: absolute; right: 10px; bottom: 10px; }
+/* (the ones that change her name everywhere, scoped to the copy here) */
+.wr-mock.af-sloppy .brand-name { font-family: "Comic Sans MS", "Segoe Print", cursive; font-size: 19px; color: #d8e27a; rotate: -3deg; }
+.wr-mock.af-isyou .brand-name { color: transparent; }
+
+/* achievements: their window's cards, a column narrower */
+.wr-ach-head { display: flex; align-items: center; gap: 14px; }
+.wr-ach-head .wr-count { margin: 0; }
+.wr-ach-head .ach-progress { flex: 1; }
+.wr-ach .ach-grid { grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); }
+
+/* ---------- backgrounds: a desktop picture with its phone one leaning on it ---------- */
+.wr-walls-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.wr-walls-head .wr-count { margin: 0; flex: 1; }
+.wr-walls { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 18px 14px; }
+.wr-wall { display: flex; flex-direction: column; gap: 9px; padding: 0; border: 0; background: none; color: var(--text); cursor: zoom-in; text-align: left; }
+.wr-wall-pics { position: relative; display: block; padding: 0 18px 10px 0; }
+.wr-wall-desk { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px; background: var(--surface-2);
+  box-shadow: 0 0 0 1px var(--line-2), 0 10px 24px rgba(0, 0, 0, .45); transition: transform .2s var(--spring); }
+.wr-wall-phone { position: absolute; right: 0; bottom: 0; width: 22%; aspect-ratio: 1290 / 2796; object-fit: cover; border-radius: 6px; background: var(--surface-2);
+  box-shadow: 0 0 0 2px #0b0b0d, 0 0 0 3px var(--line-2), 0 10px 20px rgba(0, 0, 0, .6); transition: transform .2s var(--spring); }
+.wr-wall:hover .wr-wall-desk { transform: translateY(-2px); }
+.wr-wall:hover .wr-wall-phone { transform: translateY(-4px) rotate(3deg); }
+.wr-wall-name { font: 600 13px/1.2 var(--font); }
+/* the viewer */
+.wr-viewer { display: grid; place-items: center; z-index: 120; background: rgba(5, 5, 8, .86); }
+.wr-v { display: flex; flex-direction: column; gap: 12px; width: min(1200px, 92vw); height: min(780px, 90vh); }
+.wr-v-bar { display: flex; align-items: center; gap: 14px; }
+.wr-v-bar b { font: 800 17px/1 var(--font-display); }
+.wr-v-count { font-size: 12px; color: var(--text-3); margin-right: auto; }
+.wr-v-kind { align-self: center; }
+.wr-v-pic { position: relative; flex: 1; min-height: 0; }
+/* (fitted inside the space, whichever way round the picture is) */
+.wr-v-pic img { position: absolute; inset: 0; margin: auto; max-width: calc(100% - 100px); max-height: 100%; border-radius: 10px; box-shadow: 0 20px 60px rgba(0, 0, 0, .6); }
+.wr-v-pic.phone img { border-radius: 18px; box-shadow: 0 0 0 4px #0b0b0d, 0 0 0 5px var(--line-2), 0 20px 60px rgba(0, 0, 0, .6); }
+.wr-v-nav { position: absolute; top: 50%; translate: 0 -50%; width: 40px; height: 56px; border: 0; border-radius: 10px; background: rgba(0, 0, 0, .45);
+  color: #fff; font: 400 34px/1 var(--font); cursor: pointer; z-index: 1; }
+.wr-v-nav:hover { background: rgba(0, 0, 0, .7); }
+.wr-v-nav[data-nav="-1"] { left: 0; }
+.wr-v-nav[data-nav="1"] { right: 0; }
+
+/* her name in the corner opens it too */
+.brand-name { cursor: pointer; }
+
+@media (max-width: 880px) { .wd { grid-template-columns: 1fr; } .wr-stage { min-height: 320px; } }
+@media (prefers-reduced-motion: reduce) { .wr-body.wr-twirl, .wr-body.wr-land, .wr-sparks i, .nope { animation: none; } }

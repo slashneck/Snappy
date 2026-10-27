@@ -446,6 +446,21 @@ public sealed class LibraryWindow : Form
                 Directory.CreateDirectory(_recorder.Settings.ScreenshotsFolder);
                 ShellOps.ShowInExplorer(_recorder.Settings.ScreenshotsFolder);
                 return true;
+            case "wallpapers.saveAs":
+            {
+                // one of the show's stills (only ever the app's own pictures), wherever the person picks
+                string dir = Path.GetFullPath(Path.Combine(AppPaths.WebRoot, "media", "wallpapers")) + Path.DirectorySeparatorChar;
+                string from = Path.GetFullPath(Path.Combine(dir, Path.GetFileName(Str("file"))));
+                if (!from.StartsWith(dir, StringComparison.OrdinalIgnoreCase) || !File.Exists(from)) return false;
+                using var dlg = new SaveFileDialog
+                {
+                    Title = "Save the picture", FileName = "Snappy - " + Path.GetFileName(from), Filter = "JPEG picture|*.jpg",
+                    InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), OverwritePrompt = true,
+                };
+                if (dlg.ShowDialog(this) != DialogResult.OK) return false;
+                await Task.Run(() => File.Copy(from, dlg.FileName, true));
+                return true;
+            }
             case "storage.usage":
                 return await Task.Run(() => StorageLimiter.FolderSize(_library.Root));
 #if DEBUG
@@ -471,6 +486,15 @@ public sealed class LibraryWindow : Form
                 _ = Task.Delay(7000).ContinueWith(_ => BeginInvoke(popup.Dispose));
                 return true;
             }
+            case "overlay.outfitKey":
+                return OverlayOutfit.Key;
+            case "overlay.outfit":
+            {
+                // the page has drawn the clip pop-up again in her outfit (or sends none, to take it off)
+                var sheets = p["sheets"] is JsonObject o ? o.ToDictionary(kv => kv.Key, kv => kv.Value?.GetValue<string>() ?? "") : null;
+                OverlayOutfit.Set(Str("key"), (long)Num("until"), Str("voice"), p["style"]?.ToJsonString(), sheets);
+                return true;
+            }
             case "sound.blip":
                 SnappySounds.Blip(Num("pitch"), Num("volume"));
                 return true;
@@ -489,6 +513,47 @@ public sealed class LibraryWindow : Form
             case "sound.hush":
                 SnappySounds.Hush();
                 return true;
+            case "sound.trackHas":
+                return File.Exists(TrackPath(Str("key")));
+            case "sound.track":
+            {
+                // music the page composed for one of her shows, kept for the sound player
+                string pcm = Str("pcm");
+                if (pcm.Length > 24_000_000) return false;
+                string path = TrackPath(Str("key"));
+                Directory.CreateDirectory(SnappySounds.TrackDir);
+                await File.WriteAllBytesAsync(path, Convert.FromBase64String(pcm));
+                return true;
+            }
+            case "sound.trackFile":
+            {
+                // music a show ships already rendered (a file under wwwroot/media), decoded for the sound player; much
+                // quicker than the page composing it, and the page can't read files itself
+                string media = Path.GetFullPath(Path.Combine(AppPaths.WebRoot, "media")) + Path.DirectorySeparatorChar;
+                string file = Path.GetFullPath(Path.Combine(AppPaths.WebRoot, Str("file").Replace('/', Path.DirectorySeparatorChar)));
+                if (!file.StartsWith(media, StringComparison.OrdinalIgnoreCase) || !File.Exists(file)) return false;
+                string path = TrackPath(Str("key"));
+                Directory.CreateDirectory(SnappySounds.TrackDir);
+                var psi = ClipMedia.NewFfmpeg(new[]
+                {
+                    "-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-i", file, "-f", "s16le", "-ac", "1", "-ar", "48000", path + ".part",
+                });
+                using (var proc = Process.Start(psi)!)
+                {
+                    proc.StandardInput.Close();
+                    await proc.StandardError.ReadToEndAsync();
+                    await proc.WaitForExitAsync();
+                    if (proc.ExitCode != 0 || !File.Exists(path + ".part")) return false;
+                }
+                File.Move(path + ".part", path, true);
+                return true;
+            }
+            case "sound.playTrack":
+            {
+                string path = TrackPath(Str("key"));
+                if (File.Exists(path)) SnappySounds.Track(path, Num("volume"));
+                return File.Exists(path);
+            }
             case "gag.confine":
                 ConfineCursor(Bool("on"));
                 return true;
@@ -970,6 +1035,10 @@ public sealed class LibraryWindow : Form
     }
 
     private static int Int(string? value) => int.TryParse(value, out int n) ? n : 0;
+
+    // a composed piece's file, named only with letters, digits and dashes
+    private static string TrackPath(string key) =>
+        Path.Combine(SnappySounds.TrackDir, new string(key.Where(ch => char.IsAsciiLetterOrDigit(ch) || ch == '-').Take(64).ToArray()) + ".pcm");
 
     private static string JsonParam(JsonObject p, string key) =>
         p[key]?.ToJsonString() ?? throw new InvalidOperationException($"Missing {key}");

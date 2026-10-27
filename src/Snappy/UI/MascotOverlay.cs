@@ -68,7 +68,7 @@ internal sealed class MascotOverlay : Form
     public void ShowSaving(string app)
     {
         _error = false;
-        SetText("Saving your clip...", app);
+        SetText(OverlayOutfit.Style?.Saving ?? "Saving your clip...", app);
         StartStrip("clip");
         long now = _clock.ElapsedMilliseconds;
         if (_phase is Phase.Hidden or Phase.Leaving) Appear(now);
@@ -127,7 +127,9 @@ internal sealed class MascotOverlay : Form
     private void Tick()
     {
         long now = _clock.ElapsedMilliseconds;
-        var (sheet, info) = _strips[_strip];
+        var (builtIn, info) = _strips[_strip];
+        // (in whatever outfit she's wearing in the app)
+        var sheet = OverlayOutfit.Sheet(_strip) ?? builtIn;
         int frameMs = 1000 / info.Fps;
         int frame = (int)((now - _stripStart) / frameMs);
         if (_strip == "clip" && frame >= info.Frames) { StartStrip("working"); Tick(); return; }
@@ -182,8 +184,15 @@ internal sealed class MascotOverlay : Form
         string title = _title[..Math.Min(_title.Length, chars)];
         string sub = _sub[..Math.Min(_sub.Length, Math.Max(0, chars - _title.Length))];
 
-        using var titleFont = new Font("Segoe UI Semibold", 14.5f * s, GraphicsUnit.Pixel);
-        using var subFont = new Font("Segoe UI", 12.5f * s, GraphicsUnit.Pixel);
+        // in a skin, the bubble is the skin's: its colours and its lettering
+        var style = OverlayOutfit.Style;
+        Color Hex(string? hex, Color fallback, int alpha)
+        {
+            try { return Color.FromArgb(alpha, string.IsNullOrEmpty(hex) ? fallback : ColorTranslator.FromHtml(hex)); }
+            catch { return Color.FromArgb(alpha, fallback); }
+        }
+        using var titleFont = style != null ? new Font(style.Font, 14f * s, style.Bold ? FontStyle.Bold : FontStyle.Regular, GraphicsUnit.Pixel) : new Font("Segoe UI Semibold", 14.5f * s, GraphicsUnit.Pixel);
+        using var subFont = style != null ? new Font(style.Font, 12f * s, GraphicsUnit.Pixel) : new Font("Segoe UI", 12.5f * s, GraphicsUnit.Pixel);
         int pad = (int)(15 * s), maxText = (int)(250 * s), lineGap = (int)(2 * s);
         int textW;
         using (var probe = Graphics.FromHwnd(IntPtr.Zero))
@@ -231,11 +240,16 @@ internal sealed class MascotOverlay : Form
                     using var shade = new SolidBrush(Color.FromArgb(bubbleAlpha * 22 / 255, 0, 0, 0));
                     g.FillPath(shade, shadowPath);
                 }
-                using (var path = RoundedRect(box, 16 * s))
-                using (var fill = new SolidBrush(Color.FromArgb(bubbleAlpha, 244, 244, 244)))
+                using (var path = RoundedRect(box, Math.Max(1, (float)(style?.Radius ?? 16)) * s))
+                using (var fill = new SolidBrush(Hex(style?.Bg, Color.FromArgb(244, 244, 244), bubbleAlpha)))
                 {
                     g.FillPath(fill, path);
                     g.FillPolygon(fill, new[] { new PointF(box.Right - 2, eyes - tail), tip, new PointF(box.Right - 2, eyes + tail) });
+                    if (!string.IsNullOrEmpty(style?.Edge))
+                    {
+                        using var edge = new Pen(Hex(style.Edge, Color.White, bubbleAlpha * 110 / 255), 1.4f * s);
+                        g.DrawPath(edge, path);
+                    }
                     if (Shiny)
                     {
                         using var gold = new Pen(Color.FromArgb(bubbleAlpha, 232, 178, 40), 2.2f * s);
@@ -245,9 +259,17 @@ internal sealed class MascotOverlay : Form
 
                 var format = new StringFormat(StringFormatFlags.NoWrap) { Trimming = StringTrimming.EllipsisCharacter };
                 float textY = box.Y + (int)(9 * s);
-                using (var ink = new SolidBrush(_error ? Color.FromArgb(bubbleAlpha, 214, 50, 43) : Color.FromArgb(bubbleAlpha, 10, 10, 10)))
+                var inkColor = _error ? Hex(style?.Error, Color.FromArgb(214, 50, 43), bubbleAlpha) : Hex(style?.Ink, Color.FromArgb(10, 10, 10), bubbleAlpha);
+                if (!string.IsNullOrEmpty(style?.Depth))
+                {
+                    // lettering with depth: the same words a pixel at a time down and to the right, in the depth colour
+                    using var side = new SolidBrush(Hex(style.Depth, Color.Gray, bubbleAlpha));
+                    for (int d = 3; d >= 1; d--)
+                        g.DrawString(title, titleFont, side, new RectangleF(box.X + pad + d * s * 0.8f, textY + d * s * 0.8f, textW + 2, titleFont.Height + 2), format);
+                }
+                using (var ink = new SolidBrush(inkColor))
                     g.DrawString(title, titleFont, ink, new RectangleF(box.X + pad, textY, textW + 2, titleFont.Height + 2), format);
-                using (var grey = new SolidBrush(Color.FromArgb(bubbleAlpha, 92, 92, 92)))
+                using (var grey = new SolidBrush(Hex(style?.Sub, Color.FromArgb(92, 92, 92), bubbleAlpha)))
                     g.DrawString(sub, subFont, grey, new RectangleF(box.X + pad, textY + titleFont.Height + lineGap, textW + 2, subFont.Height + 2), format);
                 g.Restore(state);
             }

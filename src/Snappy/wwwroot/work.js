@@ -19,6 +19,7 @@
         <div class="work-bubble"><div class="work-text"></div><div class="work-bar"><i></i><span class="work-pct"></span></div></div></div>`;
       document.body.appendChild(floatHost);
       Mascot.mount(floatHost.querySelector('.work-mascot'));
+      Events.dressCopy(floatHost.querySelector('.work-mascot'));
     }
     return floatHost;
   };
@@ -31,7 +32,7 @@
       return;
     }
     Mascot.talking(true);
-    const writer = Speech.typewriter(el, text, { onWord: () => Mascot.hop(), onCue: Speech.cue, quiet: !document.hasFocus() });
+    const writer = Speech.typewriter(el, Speech.accented(text), { onWord: () => Mascot.hop(), onCue: Speech.cue, quiet: !document.hasFocus() });
     host._writer = writer;
     await writer.done;
     Mascot.talking(false);

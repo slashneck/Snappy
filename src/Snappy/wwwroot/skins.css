@@ -1,0 +1,215 @@
+/* Full reskins (skins.js): a whole new body drawn behind her face, or instead of it. While one is on, her own body,
+   shutter, viewfinder and record light step aside, and so does her face when the skin brings its own. */
+.mascot:has(.sk-body) .m-talk > :is(.m-shutter, rect, .m-rec) { visibility: hidden; }
+.mascot:has(.sk-noface) .m-face { visibility: hidden; }
+
+/* her eyelids (angry, sad) are painted in her own white: on a new body they take its colour */
+.mascot:has(.sk-ghost) .m-lid { fill: #c4c8d4; }
+.mascot:has(.sk-instant) .m-lid { fill: #efe7d6; }
+.mascot:has(.sk-disposable) .m-lid { fill: #f5c518; }
+.mascot:has(.sk-lag) .m-lid { fill: #e8475e; }
+
+/* ---------- the ghost: a sheet with her eyes, see-through, floating, no shadow to speak of ---------- */
+.mascot:has(.sk-ghost) > svg { animation: sk-float 3.2s ease-in-out infinite; }
+.mascot:has(.sk-ghost) .m-shadow { opacity: .12; }
+.mascot:has(.sk-ghost) .m-blush { visibility: hidden; }
+@keyframes sk-float { 50% { translate: 0 -4px; } }
+/* saving: she fades right out, leaving only the flash, and comes back */
+.mascot[data-mood="clipping"]:has(.sk-ghost) :is(.sk-ghost, .m-face) { animation: sk-vanish .9s both; }
+@keyframes sk-vanish { 25%, 60% { opacity: .06; } }
+.mascot:is([data-mood="working"], [data-mood="starting"], [data-mood="trimming"]) .sk-ghost { animation: sk-flicker 1.2s steps(1) infinite; }
+@keyframes sk-flicker { 0%, 100% { opacity: 1; } 18% { opacity: .55; } 24% { opacity: 1; } 61% { opacity: .7; } 66% { opacity: 1; } }
+.mascot[data-mood="happy"] .sk-ghost .sk-sheet { filter: drop-shadow(0 0 10px rgba(190, 220, 255, .9)); }
+.mascot[data-mood="error"] .sk-ghost { animation: sk-wobble .65s ease-in-out both; transform-box: view-box; transform-origin: 100px 120px; }
+@keyframes sk-wobble { 25% { transform: skewX(8deg); } 50% { transform: skewX(-8deg); } 75% { transform: skewX(4deg); } }
+.mascot[data-mood="paused"]:has(.sk-ghost) :is(.sk-ghost, .m-face) { opacity: .45; }
+.mascot[data-mood="recording"] .sk-ghost .sk-sheet { filter: drop-shadow(0 0 6px rgba(255, 90, 90, .5)); }
+
+/* ---------- the instant camera: a picture slides out of the bottom, and develops ---------- */
+.mascot[data-mood="clipping"] .sk-instant-front .sk-photo { animation: sk-photo-out .7s .25s cubic-bezier(.3, .7, .4, 1) both; }
+.mascot[data-mood="clipping"] .sk-instant .sk-flashbar { animation: sk-flashbar .45s ease-out both; }
+@keyframes sk-flashbar { 0% { fill: #ffffff; filter: drop-shadow(0 0 10px #fff); } 100% { fill: #d9dde3; } }
+@keyframes sk-photo-out { to { transform: translateY(0); } }
+.sk-instant-front .sk-photo { transform: translateY(-56px); }
+.mascot:is([data-mood="working"], [data-mood="starting"], [data-mood="trimming"], [data-mood="happy"]) .sk-instant-front .sk-photo { transform: translateY(0); }
+.mascot:is([data-mood="working"], [data-mood="starting"], [data-mood="trimming"]) .sk-instant-front .sk-print { animation: sk-develop 1.2s ease-in-out infinite alternate; }
+@keyframes sk-develop { from { fill: #2a2a2a; } to { fill: #7d93a6; } }
+.mascot[data-mood="happy"] .sk-instant-front .sk-print { fill: #9fc2d9; }
+.mascot[data-mood="happy"] .sk-instant-front .sk-photo { animation: sk-shake .28s ease-in-out 4 both; transform-box: fill-box; transform-origin: 50% 0; }
+@keyframes sk-shake { 0%, 100% { transform: translateY(0) rotate(0); } 25% { transform: translateY(0) rotate(5deg); } 75% { transform: translateY(0) rotate(-5deg); } }
+.mascot[data-mood="error"] .sk-instant-front .sk-print { fill: #6b1f16; }
+.mascot[data-mood="error"] .sk-instant-front .sk-photo { transform: translateY(0); }
+.sk-instant .sk-rec { fill: #3a332c; }
+.mascot[data-mood="recording"] .sk-instant .sk-rec { fill: #ff3b30; animation: m-rec 1.6s ease-in-out infinite; }
+
+/* ---------- the disposable camera: a flash window, and the wheel wound after every picture ---------- */
+.mascot[data-mood="clipping"] .sk-disposable .sk-flashwin { animation: sk-flashbar .45s ease-out both; }
+.sk-disposable .sk-ridges { transform-box: view-box; }
+.mascot[data-mood="clipping"] .sk-disposable .sk-ridges { animation: sk-wind .25s .45s linear 3 both; }
+.mascot:is([data-mood="working"], [data-mood="starting"], [data-mood="trimming"]) .sk-disposable .sk-ridges { animation: sk-wind .3s linear infinite; }
+@keyframes sk-wind { from { transform: translateX(0); } to { transform: translateX(-8px); } }
+.mascot[data-mood="error"] .sk-disposable .sk-flashwin { fill: #ff5a4a; }
+.mascot[data-mood="recording"] .sk-disposable .sk-rec { fill: #ff3b30; animation: m-rec 1.6s ease-in-out infinite; }
+
+/* ---------- 8-bit: everything in squares, everything in steps ---------- */
+.sk8-e { opacity: 0; }
+.sk8-open { opacity: 1; animation: sk8-blink 4.2s steps(1) infinite; }
+@keyframes sk8-blink { 0%, 94% { opacity: 1; } 95%, 97% { opacity: 0; } }
+.mascot:is([data-eyes="happy"], [data-eyes="joy"], [data-eyes="wink"]) .sk8-open,
+.mascot:is([data-eyes="sleep"], [data-eyes="flat"], [data-eyes="smug"], [data-eyes="sad"]) .sk8-open,
+.mascot:is([data-eyes="shock"], [data-eyes="heart"], [data-eyes="angry"], [data-eyes="wince"], [data-eyes="dizzy"], [data-eyes="ew"]) .sk8-open { opacity: 0; animation: none; }
+.mascot:is([data-eyes="happy"], [data-eyes="joy"], [data-eyes="wink"]) .sk8-happy { opacity: 1; }
+.mascot:is([data-eyes="sleep"], [data-eyes="flat"], [data-eyes="smug"], [data-eyes="sad"]) .sk8-closed { opacity: 1; }
+.mascot[data-eyes="shock"] .sk8-shock { opacity: 1; }
+.mascot[data-eyes="heart"] .sk8-heart { opacity: 1; }
+.mascot:is([data-eyes="angry"], [data-eyes="wince"], [data-eyes="dizzy"], [data-eyes="ew"]) .sk8-x { opacity: 1; }
+.mascot:has(.sk-pixel) .m-talk { animation-timing-function: steps(3) !important; }
+.sk8-spark, .sk8-dots rect { opacity: 0; }
+.mascot[data-mood="clipping"] .sk8-spark { animation: sk8-spark .6s steps(1) both; }
+@keyframes sk8-spark { 0%, 66% { opacity: 1; } 33% { opacity: 0; } 100% { opacity: 0; } }
+.mascot:is([data-mood="working"], [data-mood="starting"], [data-mood="trimming"], [data-mood="clipping"]) .sk8-dots rect { animation: sk8-dot 1.2s steps(1) infinite; }
+.sk8-dots rect:nth-child(2) { animation-delay: .3s !important; }
+.sk8-dots rect:nth-child(3) { animation-delay: .6s !important; }
+@keyframes sk8-dot { 0% { opacity: 1; } 25% { opacity: 0; } }
+.sk-pixel .sk8-rec { fill: #ff3b30; }
+.mascot[data-mood="recording"] .sk-pixel .sk8-rec { animation: sk8-rec 1s steps(1) infinite; }
+@keyframes sk8-rec { 50% { fill: #7a1410; } }
+
+/* ---------- the Lag: red, split into its colours, never quite where it should be ---------- */
+.mascot:has(.sk-lag) .m-face { filter: drop-shadow(2px 0 0 rgba(255, 42, 74, .8)) drop-shadow(-2px 0 0 rgba(42, 255, 234, .7)); }
+.mascot:has(.sk-lag) .m-breath { animation: sk-jitter 2.6s steps(1) infinite; }
+@keyframes sk-jitter { 0%, 100% { translate: 0 0; } 31% { translate: 2px 0; } 33% { translate: -1px 1px; } 35% { translate: 0 0; } 72% { translate: -2px 0; } 73% { translate: 0 0; } }
+.sk-lag .sk-glitch rect { animation: sk-bars 1.7s steps(1) infinite; }
+.sk-lag .sk-glitch rect:nth-child(2) { animation-delay: -.6s; }
+.sk-lag .sk-glitch rect:nth-child(3) { animation-delay: -1.1s; }
+@keyframes sk-bars { 0%, 100% { opacity: 1; transform: translateX(0); } 20% { opacity: 0; } 40% { opacity: 1; transform: translateX(14px); } 60% { transform: translateX(-10px); } }
+/* saving: it lags. Of course it does. A freeze, a jump, another freeze */
+.mascot[data-mood="clipping"]:has(.sk-lag) .m-mood { animation: sk-lagclip .9s steps(1) both; }
+@keyframes sk-lagclip { 0% { translate: 0 0; } 20% { translate: 6px -4px; } 45% { translate: 6px -4px; } 50% { translate: -4px 2px; } 75% { translate: 0 0; } }
+.mascot:is([data-mood="working"], [data-mood="starting"], [data-mood="trimming"]) .sk-lag .sk-glitch rect { animation-duration: .5s; }
+.mascot[data-mood="error"]:has(.sk-lag) .m-face { filter: drop-shadow(5px 0 0 rgba(255, 42, 74, .9)) drop-shadow(-5px 0 0 rgba(42, 255, 234, .8)); }
+
+/* ---------- Claude: a terminal window with her heart in it ---------- */
+.skc-e { opacity: 0; }
+.skc-open { opacity: 1; }
+.mascot:is([data-eyes="happy"], [data-eyes="joy"], [data-eyes="wink"], [data-eyes="heart"], [data-eyes="sleep"], [data-eyes="flat"], [data-eyes="smug"],
+  [data-eyes="sad"], [data-eyes="shock"], [data-eyes="angry"], [data-eyes="wince"], [data-eyes="dizzy"], [data-eyes="ew"]) .skc-open { opacity: 0; }
+.mascot:is([data-eyes="happy"], [data-eyes="joy"], [data-eyes="wink"], [data-eyes="heart"]) .skc-happy { opacity: 1; }
+.mascot:is([data-eyes="sleep"], [data-eyes="flat"], [data-eyes="smug"], [data-eyes="sad"]) .skc-flat { opacity: 1; }
+.mascot[data-eyes="shock"] .skc-shock { opacity: 1; }
+.mascot:is([data-eyes="angry"], [data-eyes="ew"]) .skc-angry { opacity: 1; }
+.mascot:is([data-eyes="wince"], [data-eyes="dizzy"]) .skc-x { opacity: 1; }
+.sk-claude-front .skc-cursor { animation: skc-blink 1.1s steps(1) infinite; }
+@keyframes skc-blink { 50% { opacity: 0; } }
+.sk-claude .skc-type, .sk-claude-front .skc-spin { opacity: 0; }
+.sk-claude .skc-type { transform-box: fill-box; transform-origin: 0 50%; }
+.mascot[data-mood="clipping"] .sk-claude .skc-type { animation: skc-type .9s steps(9) both; }
+@keyframes skc-type { from { opacity: 1; transform: scaleX(0); } to { opacity: 1; transform: scaleX(1); } }
+.sk-claude-front .skc-spin { transform-box: fill-box; transform-origin: center; }
+.mascot:is([data-mood="working"], [data-mood="starting"], [data-mood="trimming"]) .sk-claude-front .skc-spin { opacity: 1; animation: skc-spin .6s steps(4) infinite; }
+@keyframes skc-spin { to { transform: rotate(360deg); } }
+.mascot:is([data-mood="working"], [data-mood="starting"], [data-mood="trimming"]) .sk-claude-front .skc-cursor { opacity: 0; animation: none; }
+.mascot[data-mood="error"] .sk-claude-front path { stroke: #ff6a5a; }
+.mascot[data-mood="recording"] .sk-claude .skc-rec { fill: #ff3b30; animation: m-rec 1.6s ease-in-out infinite; }
+
+/* ---------- 3D: her own model, rendered in Blender. A picture for every look of her eyes (the right one shows),
+   her cheeks on a layer of their own, and her drawn tears, sweat and marks still on top ---------- */
+.mascot:has(.sk-3d) .m-face :is(.m-eye, .m-blush) { visibility: hidden; }
+.sk-3d .s3 { opacity: 0; }
+.mascot:not([data-eyes]) .sk-3d .s3-open, .mascot[data-eyes="open"] .sk-3d .s3-open,
+.mascot[data-eyes="happy"] .sk-3d .s3-happy,
+.mascot[data-eyes="joy"] .sk-3d .s3-joy,
+.mascot[data-eyes="shine"] .sk-3d .s3-shine,
+.mascot[data-eyes="smug"] .sk-3d .s3-smug,
+.mascot[data-eyes="flat"] .sk-3d .s3-flat,
+.mascot[data-eyes="wink"] .sk-3d .s3-wink,
+.mascot[data-eyes="heart"] .sk-3d .s3-heart,
+.mascot[data-eyes="sad"] .sk-3d .s3-sad,
+.mascot[data-eyes="angry"] .sk-3d .s3-angry,
+.mascot[data-eyes="shock"] .sk-3d .s3-shock,
+.mascot[data-eyes="sleep"] .sk-3d .s3-sleep,
+.mascot[data-eyes="wince"] .sk-3d .s3-wince,
+.mascot[data-eyes="dollar"] .sk-3d .s3-dollar,
+.mascot[data-eyes="ew"] .sk-3d .s3-ew { opacity: 1; }
+/* the loading spinner and the dizzy spiral turn in six steps, a picture each */
+.mascot[data-eyes="load"] .sk-3d .s3-load { animation: s3-sixth .8s calc(var(--i) * .8s / 6) infinite; }
+.mascot[data-eyes="dizzy"] .sk-3d .s3-dizzy { animation: s3-sixth .6s calc(var(--i) * .6s / 6) infinite; }
+@keyframes s3-sixth { 0%, 16.6% { opacity: 1; } 16.7%, 100% { opacity: 0; } }
+/* a blink, and every change of eyes behind one */
+.mascot:is(.blink, .swap) .sk-3d .s3 { opacity: 0; animation: none; }
+.mascot:is(.blink, .swap) .sk-3d .s3-blink { opacity: 1; }
+/* clipping: open, squeezed shut in the flash, a proud grin, open again (as her drawn eyes do) */
+.mascot[data-mood="clipping"] .sk-3d .s3-open { animation: m-clip-open .9s linear both; }
+.mascot[data-mood="clipping"] .sk-3d .s3-wince { animation: m-clip-wince .9s linear both; }
+.mascot[data-mood="clipping"] .sk-3d .s3-happy { animation: m-clip-happy .9s linear both; }
+.sk-3d .s3-blush { opacity: 0; transition: opacity .25s; }
+.mascot:is([data-eyes="happy"], [data-eyes="heart"], [data-eyes="wink"], [data-eyes="joy"], [data-eyes="smug"], .pet, .love, .rub) .sk-3d .s3-blush:not(.s3-ew) { opacity: .95; }
+.mascot[data-eyes="ew"] .sk-3d .s3-blush.s3-ew { opacity: .95; }
+.mascot[data-mood="clipping"] .sk-3d .s3-blush:not(.s3-ew) { animation: m-clip-happy .9s linear both; }
+/* the big one (no clips yet, the wardrobe) is for spinning: while she turns, a video of her turning takes over from
+   her faces, and she stays put (no hops or breathing to fight the turn) */
+.sk-3d .s3-turn { display: none; }
+.sk-3d .s3-turn video { display: block; width: 100%; height: 100%; }
+.mascot.spinning .sk-3d .s3-turn { display: inline; }
+.mascot.spinning .sk-3d :is(.s3, .s3-blush), .mascot.spinning:has(.sk-3d) .m-face { visibility: hidden; }
+.mascot.spinning :is(.m-breath, .m-mood, .m-react, .m-talk) { animation: none !important; transform: none !important; }
+.mascot.spin-only { cursor: grab; touch-action: none; }
+.mascot.spin-only.spinning { cursor: grabbing; }
+
+/* ---------- their speech bubbles ---------- */
+.speech.as-ghost { background: rgba(236, 241, 255, .86); color: #47506d; font-style: italic; backdrop-filter: blur(4px); box-shadow: 0 0 26px rgba(190, 215, 255, .45), 0 10px 28px rgba(0, 0, 0, .35); }
+.speech.as-instant { background: #f6f0e1; color: #4a3b2a; font-family: "Courier New", Courier, monospace; font-weight: 700; box-shadow: 0 12px 26px rgba(0, 0, 0, .4), inset 0 0 0 4px #fffaf0, inset 0 0 0 5px #d8ccb0; }
+.speech.as-disposable { background: #f5c518; color: #111; font-weight: 800; border: 3px solid #111; border-radius: 6px; }
+.speech.as-pixel { background: #000; color: #fff; font: 700 13px/1.55 ui-monospace, Consolas, monospace; border: 3px solid #fff; border-radius: 0; box-shadow: 0 0 0 3px #000, 0 12px 26px rgba(0, 0, 0, .5); }
+.speech.as-lag { background: #2a0b12; color: #ff9aa8; font: 600 13px/1.5 ui-monospace, Consolas, monospace; text-shadow: 2px 0 rgba(42, 255, 234, .55), -2px 0 rgba(255, 42, 74, .65);
+  box-shadow: 0 0 0 1px rgba(255, 42, 74, .5), 0 12px 28px rgba(0, 0, 0, .5); animation: sk-bubble-jitter 2.2s steps(1) infinite; }
+@keyframes sk-bubble-jitter { 0%, 100% { translate: 0 0; } 40% { translate: 2px 0; } 42% { translate: 0 0; } 77% { translate: -2px 1px; } 78% { translate: 0 0; } }
+.speech.as-claude { background: #1f1c19; color: #f0c6a6; font: 500 13px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .5), 0 0 0 1px rgba(232, 149, 106, .35), 0 0 18px rgba(232, 149, 106, .15); }
+.speech.as-3d { background: linear-gradient(180deg, #fbf9ff, #ece6fa); color: #2a2340; font-weight: 800; letter-spacing: .01em;
+  text-shadow: 1px 1px 0 #c9bdf0, 2px 2px 0 #b3a3e8, 3px 3px 0 #9d89dd, 4px 4px 5px rgba(60, 40, 120, .25);
+  box-shadow: 0 2px 0 #d9cff5, 0 4px 0 #c4b6ee, 0 14px 28px rgba(40, 20, 90, .35); }
+:is(.speech.as-ghost, .speech.as-instant, .speech.as-disposable, .speech.as-pixel, .speech.as-lag, .speech.as-claude, .speech.as-3d) .speech-close { color: inherit; }
+@media (prefers-reduced-motion: reduce) {
+  .mascot:has(.sk-ghost) > svg, .mascot:has(.sk-lag) .m-breath, .sk-lag .sk-glitch rect, .speech.as-lag, .sk-claude-front .skc-cursor { animation: none; }
+}
+
+/* ---------- "sloppy": the show she puts on to prove she is not ---------- */
+.ns-show { position: fixed; inset: 0; z-index: 140; background: #000; opacity: 0; transition: opacity .6s ease; }
+.ns-show.in { opacity: 1; }
+.ns-show canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+/* the lights before the show: flickering like a dying bulb while it gets ready, then off */
+.ns-lights { position: fixed; inset: 0; z-index: 139; background: #000; pointer-events: none; opacity: 0; animation: ns-flicker 1.6s steps(1) infinite; }
+.ns-lights.out { animation: ns-lights-off .6s steps(1) forwards; }
+@keyframes ns-flicker {
+  0% { opacity: 0; } 8% { opacity: .82; } 12% { opacity: 0; } 46% { opacity: 0; } 50% { opacity: .9; } 53% { opacity: .2; } 57% { opacity: .75; } 61% { opacity: 0; } 100% { opacity: 0; }
+}
+@keyframes ns-lights-off { 0% { opacity: .85; } 15% { opacity: .1; } 30% { opacity: .95; } 42% { opacity: .3; } 55% { opacity: 1; } 100% { opacity: 1; } }
+/* the leftover from the animation tests: a picture viewer that takes its time, then won't stop staring */
+.ns-viewer { position: fixed; z-index: 85; left: 50%; top: 42%; width: min(560px, 62vw); translate: -50% -50%; border-radius: 10px; overflow: hidden; background: #1b1b1f;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .08), 0 30px 80px rgba(0, 0, 0, .6); opacity: 0; scale: .9; transition: opacity .25s, scale .4s var(--spring-bouncy, ease); }
+.ns-viewer.in { opacity: 1; scale: 1; }
+.ns-viewer.out { opacity: 0; scale: .6; rotate: -6deg; transition: opacity .3s, scale .35s ease-in, rotate .35s ease-in; }
+.ns-viewer-bar { padding: 9px 12px; font: 600 12px/1 var(--font); color: rgba(255, 255, 255, .6); background: #26262c; }
+.ns-viewer-pic { position: relative; aspect-ratio: 16 / 9; background: #0e0e10; overflow: hidden; }
+.ns-viewer-pic img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; clip-path: inset(0 0 100% 0); transform-origin: 55% 36%; }
+.ns-viewer.loaded img { animation: ns-trickle 1.4s steps(9) forwards; }
+.ns-viewer.stare img { clip-path: inset(0); animation: ns-stare 7s cubic-bezier(.2, .6, .2, 1) forwards; }
+.ns-viewer.stare { animation: ns-twitch .45s steps(1) 2; }
+@keyframes ns-trickle { to { clip-path: inset(0); } }
+@keyframes ns-stare { to { transform: scale(1.6); } }
+@keyframes ns-twitch { 0% { translate: -50% -50%; filter: none; } 30% { translate: calc(-50% + 5px) -50%; filter: hue-rotate(120deg) contrast(1.6); }
+  60% { translate: calc(-50% - 4px) calc(-50% + 2px); filter: invert(1); } 80% { translate: -50% -50%; filter: none; } }
+.ns-viewer-load { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 10px; color: rgba(255, 255, 255, .55); font: 500 12px/1 var(--font); transition: opacity .2s; }
+.ns-viewer.loaded .ns-viewer-load { opacity: 0; }
+.ns-viewer-load b { width: 180px; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, .1); overflow: hidden; }
+.ns-viewer-load i { display: block; width: 0; height: 100%; background: #b9a8f0; animation: ns-load 1.8s cubic-bezier(.3, .1, .3, 1) forwards; }
+@keyframes ns-load { 0% { width: 0; } 55% { width: 72%; } 80% { width: 74%; } 100% { width: 100%; } }
+/* the app itself glitching out for a moment before the show */
+.app.ns-glitch { animation: ns-app-glitch .9s steps(1) both; }
+@keyframes ns-app-glitch {
+  0% { transform: none; filter: none; } 10% { transform: translate(-6px, 2px); filter: hue-rotate(90deg) saturate(3); }
+  20% { transform: translate(8px, -3px) skewX(3deg); filter: invert(1); } 30% { transform: translate(-3px, 0) skewX(-5deg); filter: hue-rotate(200deg) contrast(2); }
+  45% { transform: translate(5px, 4px); filter: contrast(3) saturate(0); } 60% { transform: translate(-8px, -2px) skewX(6deg); filter: invert(1) hue-rotate(40deg); }
+  75% { transform: translate(2px, 0); filter: hue-rotate(300deg) saturate(4); } 90% { transform: none; filter: brightness(3); } 100% { transform: none; filter: none; }
+}

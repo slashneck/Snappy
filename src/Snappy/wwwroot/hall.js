@@ -41,7 +41,7 @@
   const scoreOf = (d) => {
     const best = Arcade.top(d.id);
     if (best === null) return null;
-    return `${best.toLocaleString('en-US')} ${d.unit === 'attempts' && best === 1 ? 'attempt' : d.unit}`;
+    return `${best.toLocaleString('en-US')} ${best === 1 && d.unit.endsWith('s') ? d.unit.slice(0, -1) : d.unit}`;
   };
 
   // ---- the controller next to her name

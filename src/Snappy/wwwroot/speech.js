@@ -118,15 +118,19 @@
   let focused = document.hasFocus();
   let lastChatter = 0, quietUntil = 0;
 
-  const anchor = () => document.getElementById('mascot');
+  // (out on the wardrobe's stage, she talks from there)
+  const anchor = () => document.querySelector('.wr-her.lead') || document.getElementById('mascot');
   const playing = () => { const v = document.getElementById('video'); return v && !v.paused && !v.ended && state.view === 'player'; };
   // force: her goodbye when you switch her talking off still gets through
   const canTalk = (force) => (Speech.enabled || force) && !Speech.waiting && focused && !document.hidden && !window.Tour?.active && !document.querySelector('.modal-backdrop:not([hidden])');
 
+  // An outfit can come with its own way of talking (the cat ears do): while she wears it, her lines go through it.
+  const accented = (line) => (Speech.accent && typeof line === 'string' ? Speech.accent(line) : line);
+
   function say(text, opts = {}) {
     // she hasn't found her voice yet (an early bird's welcome-back story is still to come)
     if (Speech.waiting) return;
-    const pages = Array.isArray(text) ? text : [text];
+    const pages = (Array.isArray(text) ? text : [text]).map((page) => (typeof page === 'object' ? { ...page, text: accented(page.text) } : accented(page)));
     const actions = opts.actions || (opts.action ? [opts.action] : []);
     // onTyped: called once she has typed it all out (or it got cut short), for a conversation to go on from there
     const item = { pages, face: opts.face || null, actions, kind: opts.kind || 'chatter', key: opts.key || null, hold: opts.hold, force: !!opts.force, at: Date.now(), onTyped: opts.onTyped };
@@ -203,7 +207,7 @@
       const page = item.pages[me.page];
       Mascot.face(typeof page === 'object' ? page.face : item.face);
       Mascot.talking(true);
-      me.writer = typewriter(textEl, typeof page === 'object' ? page.text : page, { onWord: () => Mascot.hop(), onCue: cue, ...(skin === 'program' && { voice: programBlip, speed: 31 }) });
+      me.writer = typewriter(textEl, typeof page === 'object' ? page.text : page, { onWord: () => Mascot.hop(), onCue: cue, ...((skin && Speech.skinVoice[skin]) || window.Events?.voice) });
       await me.writer.done;
       if (current !== me) return;
       Mascot.talking(false);
@@ -240,8 +244,16 @@
 
   // To the right of her head, the tail pointing back at her, but never tucked up under the window's top edge.
   function place(el) {
-    const r = anchor()?.getBoundingClientRect();
+    const at = anchor();
+    const r = at?.getBoundingClientRect();
     if (!r) return;
+    // on the wardrobe's stage: under her, the tail pointing up at her
+    el.classList.toggle('below', !!at.closest('.wr-snappy'));
+    if (el.classList.contains('below')) {
+      el.style.left = `${Math.round(r.left + r.width / 2)}px`;
+      el.style.top = `${Math.round(r.bottom + 6)}px`;
+      return;
+    }
     const eyes = r.top + r.height * 0.5;
     const top = Math.max(14, eyes - 27);
     el.style.left = `${Math.round(r.right + 4)}px`;
@@ -265,7 +277,9 @@
     enabled: true, sounds: true, volume: 1, waiting: false,
     // a quick "hi hi" at the current volume, for the volume slider
     sample() { [0, 90, 180].forEach((ms) => setTimeout(() => { lastBlip = 0; blip(true); }, ms)); },
-    say, typewriter, blip, shoutBlip, programBlip, programWord, claudeBlip, claudeWord, tune, cue,
+    say, typewriter, blip, shoutBlip, programBlip, programWord, claudeBlip, claudeWord, tune, cue, accented, accent: null,
+    // how she sounds in a skin (the Program's voice in its skin, and so on)
+    skinVoice: { program: { voice: programBlip, speed: 31 } },
     // How long a line stays up once it's typed: you've read most of it while it typed, so a beat under a second to
     // finish it (a little longer for a long one), or whatever the scene asked for if that's longer. Only a hold of
     // exactly 0 (a line that gets cut off) is let through.
